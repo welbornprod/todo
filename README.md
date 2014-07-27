@@ -9,6 +9,27 @@ allows you to group items with 'keys'.
 The file is saved as JSON, so it is hand-editable. It uses a dict/map to store
 items in their own 'group' (hence the 'keys').
 
+The original `todo` just saved a list as JSON, and consisted of ~350 lines
+that were not reusable. So I decided to add some functionality, and turn it
+into an `import`able library that also serves as a working app. It has not
+been fully tested, and the library has only been used in the app itself.
+
+The library contains a `TodoList` class that holds `TodoKey`s which in turn
+holds `TodoItem`s. Each have their own methods for working with them. I won't
+document them here, because this is really just a glorified script. I'll just
+say that they have most of the functions you would expect out of a Todo
+library:
+
+    TodoList.add_item(item, key=None, important=False)
+    TodoList.remove_item(query, key=None)
+    TodoKey.find_item(query)
+    TodoList.find_item(query, key=None)
+    str(TodoItem())
+    str(TodoKey())
+    TodoList.to_json()
+    ...and the others (remove, search, move, etc.)
+
+
 Usage:
 ------
 
