@@ -16,7 +16,7 @@ from collections import UserDict, UserList
 import docopt
 
 NAME = 'Todo'
-VERSION = '2.0.0'
+VERSION = '2.0.0-1'
 VERSIONSTR = '{} v. {}'.format(NAME, VERSION)
 SCRIPT = os.path.split(os.path.abspath(sys.argv[0]))[1]
 SCRIPTDIR = os.path.abspath(sys.path[0])
@@ -618,15 +618,6 @@ def printobj(d, indent=0):
         print('{}{}'.format(' ' * indent, colorval(str(d))))
 
 
-def printsavemsg(okstatus=True):
-    """ Prints the 'Saved Items' message. """
-    if okstatus:
-        printstatus('Items saved.')
-        return okstatus
-    printstatus('Unable to save items!', error=True)
-    return okstatus
-
-
 def printstatus(msg, key=None, index=None, item=None, error=False):
     """ Prints a color-coded status message.
         If error is Truthy, the message will be red.
@@ -897,15 +888,23 @@ class TodoKey(UserList):
 
     """ A single key in the todo list. Holds items with indexes. """
     # The key to use when no key is given. (null/None)
+    # This is set to a default when TodoList.load_data() is finished.
+    # The top key is used as the default when the list is not empty.
     null = 'No Label'
 
+    class __NoLabel(object):
+
+        def __bool__(self):
+            return False
+
     def __init__(self, *args, **kwargs):
-        label = kwargs.get('label', None)
-        if label is None:
-            self.label = TodoKey.null
-        else:
+        label = kwargs.get('label', TodoKey.__NoLabel())
+        # Empty label values default to TodoKey.null.
+        self.label = label if label else TodoKey.null
+        if not isinstance(label, TodoKey.__NoLabel):
+            # Label kwarg was given. Pop it so it doesn't interfere with
+            # UserList.__init__()
             kwargs.pop('label')
-            self.label = label
         super().__init__(*args, **kwargs)
         printdebug('TodoKey(label=\'{}\')'.format(self.label))
 
@@ -945,7 +944,12 @@ class TodoKey(UserList):
         return (None, None)
 
     def get_count(self):
-        """ Wrapper for len(self.data) or len(self). """
+        """ Wrapper for len(self.data) or len(self).
+            This is only here to be consistent with TodoList.
+            len(TodoList) gives you the amount of keys,
+            where TodoList.get_count() gives you the TodoItem count.
+            TodoKey.get_count() actually does the same as len(TodoKey).
+        """
         return len(self.data)
 
     def move_item(self, query, newindex):
@@ -969,13 +973,11 @@ class TodoKey(UserList):
         maxlength = self.get_count() - 1
         if newindex == index:
             raise TodoList.SameIndexError('Indexes cannot be the same.')
-        elif 0 > newindex > maxlength:
+        elif (0 > newindex) or (newindex > maxlength):
             raise TodoList.BadIndexError('Index must be within the bounds.')
 
         try:
-            # Swap the items.
-            #self.data[newindex], self.data[index] = item, self.data[newindex]
-            # if newindex < maxlength:
+            # Remove the item, and reinsert it into the new index.
             removed = self.data.pop(index)
             self.data.insert(newindex, removed)
         except Exception as ex:
@@ -1148,7 +1150,9 @@ class TodoList(UserDict):
         return (todokey.label, index, item)
 
     def get_count(self):
-        """ Get an overall count of items in all keys. """
+        """ Get an overall count of items in all keys.
+            To get just the key count, len(TodoList) works.
+        """
         total = 0
         for todokey in self.todokeys():
             total += len(todokey)
@@ -1202,6 +1206,8 @@ class TodoList(UserDict):
         # available.
         if self.data:
             TodoKey.null = self.keynames()[0]
+            msgnullsetting = 'TodoKey.null = \'{}\''.format(TodoKey.null)
+            printdebug('TodoList.load_data(): {}'.format(msgnullsetting))
 
         return self.get_count()
 
