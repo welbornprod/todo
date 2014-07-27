@@ -313,7 +313,7 @@ def do_listkey(key=None):
         return 1
     print(str(todokey))
     if not todokey:
-        print(colorerr('    (no items in this key)'))
+        printstatus('    (no items in this key)', error=True)
     return 0
 
 
@@ -594,7 +594,7 @@ def printobj(d, indent=0):
             todokey = d.get_key(keyname)
             if todokey is None:
                 errmsg = 'printobj(TodoList) failed on: {}'.format(keyname)
-                print(colorerr(errmsg))
+                printstatus(errmsg, error=True)
                 continue
             print('{}{}:'.format(' ' * indent, colorkey(todokey.label)))
             printobj(todokey, indent=indent + 4)
@@ -621,7 +621,7 @@ def printobj(d, indent=0):
 def printstatus(msg, key=None, index=None, item=None, error=False):
     """ Prints a color-coded status message.
         If error is Truthy, the message will be red.
-        If error is an Exception, the error message will be printed.
+        If error is an Exception, the error message will be printed also.
     """
     msgfmt = ['{message}']
     if error:
@@ -643,7 +643,9 @@ def printstatus(msg, key=None, index=None, item=None, error=False):
     print('\n{}'.format(' '.join(msgfmt).format(**msgfmtargs)))
     # Print the exception message if it was passed with 'error'.
     if isinstance(error, Exception):
-        print(colorerr(str(error)))
+        errmsg = str(error)
+        if errmsg:
+            print(colorerr(errmsg))
 
 # Classes ---------------------------------------------------------
 
