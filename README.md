@@ -13,37 +13,45 @@ Usage:
 ------
 
 Add an item to the default key:
+
     todo "Get groceries."
 
 Move that todo item to a new group/another group:
+
     todo -m 0 "In Town"
 
 0 is the index of the item, you can also use:
+
     todo -m "Get groc" "In Town"
     # ...because it is looking for an index, regex pattern, or text.
 
 At this point there is only 1 'key', so you don't have to name the key.
 
 If we add another key then we may need to specify:
+
     todo "New Key" "My new item"
 
 Now we have 2 keys, they are alphabetically sorted and if you don't
 specify a key, the top one is used.
 
 You can mark that item as important (color the item purple):
+
     todo -i "New Key" "^My"
     # Regex was used there to find the item. The first item found is picked.
 
 You can rename a key:
+
     todo -n "New Key" "important stuff"
 
 You can remove a key and all of its items. If a key has more than one
 item, confirmation is needed.
+
     todo -K "important stuff"
 
 To list all of your items just run `todo`.
 
 To list only a single key:
+
     todo -l "important stuff"
 
 
