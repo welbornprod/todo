@@ -263,7 +263,7 @@ def do_add(text, key=None, important=False):
     if not text:
         printstatus('No item to add!', error=True)
         return 1
-
+    printdebug('do_add(key={},important={},"{}")'.format(key, important, text))
     key, newitem = todolist.add_item(text, key=key, important=important)
     printstatus('Added item:', key=key, item=newitem)
     return do_save()
@@ -311,7 +311,7 @@ def do_listkey(key=None):
     todokey = get_key(key)
     if todokey is None:
         return 1
-    print(str(todokey))
+    print('    {}'.format(str(todokey).replace('\n', '\n    ')))
     if not todokey:
         printstatus('    (no items in this key)', error=True)
     return 0
@@ -323,7 +323,7 @@ def do_mark_important(query, key=None, adding=False, important=True):
         arguments are handled (the way functions are fired off.)
     """
     if adding:
-        return do_add(query, key=key)
+        return do_add(query, key=key, important=important)
     key = key or TodoKey.null
 
     todokey = get_key(key)
@@ -538,6 +538,13 @@ def get_action(argdict):
             func = info['function']
             args = info.get('args', [])
             kwargs = info.get('kwargs', {})
+            if DEBUG:
+                fname = func.__name__
+                dbugmsg = (
+                    'get_action(): '
+                    '{} -> {}'
+                    '({}, {})').format(argname, fname, args, kwarg_str(kwargs))
+                printdebug(dbugmsg)
             # Return the function with the appropriate arguments/keyword-args.
             return functools.partial(func, *args, **kwargs)
     return None
@@ -555,6 +562,15 @@ def get_key(keyname=None):
         printstatus('No key named:', key=keyname, error=True)
         return None
     return key
+
+
+def kwarg_str(d):
+    """ Just converts a dict into a keyword-arg-looking string.
+        kwarg_str({'this': True, 'thing': 25}) == 'this=True, thing=25'
+    """
+    if hasattr(d, 'items'):
+        return ', '.join('{}={}'.format(k, v) for k, v in d.items())
+    return ''
 
 
 def printdebug(text=None, data=None):
