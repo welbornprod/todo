@@ -16,7 +16,7 @@ from collections import UserDict, UserList
 import docopt
 
 NAME = 'Todo'
-VERSION = '2.0.0-2'
+VERSION = '2.0.0-3'
 VERSIONSTR = '{} v. {}'.format(NAME, VERSION)
 SCRIPT = os.path.split(os.path.abspath(sys.argv[0]))[1]
 SCRIPTDIR = os.path.abspath(sys.path[0])
@@ -118,12 +118,17 @@ def main(argd):
     if runaction is None:
         # Default actions when no args are present.
         if argd['ITEM']:
+            # If the item is actually the name of a key, list that key.
+            if argd['ITEM'] in todolist.keynames():
+                return do_listkey(argd['ITEM'])
+
             # User is adding an item.
             kwargs = {
                 'key': (argd['KEY'] or TodoKey.null),
                 'important': argd['--important'],
             }
             return do_add(argd['ITEM'], **kwargs)
+
         # User is listing all items.
         return do_listall()
 
