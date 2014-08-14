@@ -68,7 +68,7 @@ USAGESTR = """{versionstr}
         -j,--json                  : Show list in JSON format.
         -K,--removekey             : Remove a key/label. (includes all items)
         -l,--list                  : List items from a certain key.
-                                     Defaults to: None (no key)
+                                     Defaults to: (first key)
         -L,--listall               : List all items from all keys.
         -m,--movetokey             : Move item to new or other key.
         -n,--renamekey             : Give a key another name/label.
@@ -119,8 +119,9 @@ def main(argd):
         # Default actions when no args are present.
         if argd['ITEM']:
             # If the item is actually the name of a key, list that key.
-            if argd['ITEM'] in todolist.keynames():
-                return do_listkey(argd['ITEM'])
+            trykey = todolist.get_key(argd['ITEM'])
+            if trykey:
+                return do_listkey(trykey)
 
             # User is adding an item.
             kwargs = {
@@ -312,8 +313,10 @@ def do_listall():
 
 def do_listkey(key=None):
     """ List all items within a key. """
+
     key = key or TodoKey.null
     todokey = get_key(key)
+
     if todokey is None:
         return 1
     print('    {}'.format(str(todokey).replace('\n', '\n    ')))
@@ -560,6 +563,10 @@ def get_key(keyname=None):
         an error message is printed and None is returned.
         With a valid keyname, the actual TodoKey() is returned.
     """
+    # A TodoKey may have been passed to another command like do_listkey..
+    if isinstance(keyname, TodoKey):
+        return keyname
+
     if keyname is None:
         keyname = TodoKey.null
     key = todolist.get_key(keyname, default=None)
@@ -1184,12 +1191,14 @@ class TodoList(UserDict):
     def get_key(self, key=None, default=None):
         """ Returns raw format items from a key.
             If no key exists, returns None.
+            Case insensitive.
         """
         key = key or TodoKey.null
+        key = key.lower()
         printdebug('TodoList.get_key(\'{}\')'.format(key))
         for todokeyname in self.data:
             todokey = self.data[todokeyname]
-            if todokey.label == key:
+            if todokey.label.lower() == key:
                 return todokey
         return default
 
