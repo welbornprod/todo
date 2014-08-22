@@ -641,7 +641,7 @@ def printobj(d, indent=0):
             if isinstance(itm, (list, tuple)):
                 printobj(itm, indent=indent + 4)
             else:
-                print('{}{}'.format(' ' * indent, colorval(str(d))))
+                print('{}{}'.format(' ' * indent, colorval(str(itm))))
     else:
         print('{}{}'.format(' ' * indent, colorval(str(d))))
 
