@@ -40,50 +40,50 @@ USAGESTR = """{versionstr}
         {script} -p ITEM <new_position> [-D]
 
     Options:
-        KEY                        : Key or label for the item.
-                                     Defaults to 'No Label'.
-        ITEM                       : Item to add, or query to use when finding
-                                     an item. When looking items up, the item
-                                     number may also be used.
-        <new_key>                  : New key for item when moving between keys.
-        <new_keyname>              : New key name when renaming a key.
-        <new_position>             : New position number for item when position
-                                     action is used.
-                                     Index must be (>= 0 and < list length).
-                                     You may also use 't[op]', or 'b[ottom]'.
-        -a,--add                   : Add an item to the list.
-                                     You may omit this option and just enter
-                                     the item (with optional key first),
-                                     unless you want to mark an item as
-                                     important while adding it.
-        -b,--bottom                : Unprioritize item. (put on the bottom).
-        -c,--clear                 : Clear all items. Confirmation needed.
-        -d,--down                  : Bump item down one spot on the list.
-        -D,--debug                 : Debug mode, prints extra information.
-                                     Gives you a look into what's going on
-                                     behind the scene.
-        -h,--help                  : Show this help message.
-        -i,--important             : Mark item as important (bold/red).
-        -I,--unimportant           : Mark item as unimportant.
-        -j,--json                  : Show list in JSON format.
-        -K,--removekey             : Remove a key/label. (includes all items)
-        -l,--list                  : List items from a certain key.
-                                     Defaults to: (first key)
-        -L,--listall               : List all items from all keys.
-                                     This is the default action when no
-                                     arguments are given.
-        -m,--movetokey             : Move item to new or other key.
-        -n,--renamekey             : Give a key another name/label.
-        -p,--position              : Move item to a new position in the same
-                                     key.
-        -r,--remove                : Remove an item from the list.
-                                     Accepts item number or regex to match.
-                                     Confirmation is needed.
-        -R,--REMOVE                : Same as --remove, no confirmation though.
-        -s,--search                : Search for items by index or regex/text.
-        -t,--top                   : Prioritize item (put on top of the list).
-        -u,--up                    : Bump item up one spot on the list.
-        -v,--version               : Show version.
+        KEY               : Key or label for the item.
+                            Defaults to 'No Label'.
+        ITEM              : Item to add, or query to use when finding
+                            an item. When looking items up, the item
+                            number may also be used.
+        <new_key>         : New key for item when moving between keys.
+        <new_keyname>     : New key name when renaming a key.
+        <new_position>    : New position number for item when position
+                            action is used.
+                            Index must be (>= 0 and < list length).
+                            You may also use 't[op]', or 'b[ottom]'.
+        -a,--add          : Add an item to the list.
+                            You may omit this option and just enter
+                            the item (with optional key first),
+                            unless you want to mark an item as
+                            important while adding it.
+        -b,--bottom       : Unprioritize item. (put on the bottom).
+        -c,--clear        : Clear all items. Confirmation needed.
+        -d,--down         : Bump item down one spot on the list.
+        -D,--debug        : Debug mode, prints extra information.
+                            Gives you a look into what's going on
+                            behind the scenes.
+        -h,--help         : Show this help message.
+        -i,--important    : Mark item as important (bold/red).
+        -I,--unimportant  : Mark item as unimportant.
+        -j,--json         : Show list in JSON format.
+        -K,--removekey    : Remove a key/label. (includes all items)
+        -l,--list         : List items from a certain key.
+                            Defaults to: (first key)
+        -L,--listall      : List all items from all keys.
+                            This is the default action when no
+                            arguments are given.
+        -m,--movetokey    : Move item to new or other key.
+        -n,--renamekey    : Give a key another name/label.
+        -p,--position     : Move item to a new position in the same
+                            key.
+        -r,--remove       : Remove an item from the list.
+                            Accepts item number or regex to match.
+                            Confirmation is needed.
+        -R,--REMOVE       : Same as --remove, no confirmation though.
+        -s,--search       : Search for items by index or regex/text.
+        -t,--top          : Prioritize item (put on top of the list).
+        -u,--up           : Bump item up one spot on the list.
+        -v,--version      : Show version.
 """.format(script=SCRIPT, versionstr=VERSIONSTR)
 
 # Global flags/settings. ------------------------------------------
@@ -1185,11 +1185,11 @@ class TodoKey(UserList):
 
 class TodoList(UserDict):
 
-    """ A todo list with keys, the default key being None. """
-    class AddError(Exception):
+    """ A todo list with keys, the default key being TodoKey.null. """
+    class AddError(ValueError):
         pass
 
-    class BadIndexError(Exception):
+    class BadIndexError(IndexError):
         pass
 
     class BadQueryError(Exception):
