@@ -16,7 +16,7 @@ from collections import UserDict, UserList
 import docopt
 
 NAME = 'Todo'
-VERSION = '2.0.0-4'
+VERSION = '2.0.0-5'
 VERSIONSTR = '{} v. {}'.format(NAME, VERSION)
 SCRIPT = os.path.split(os.path.abspath(sys.argv[0]))[1]
 SCRIPTDIR = os.path.abspath(sys.path[0])
@@ -114,7 +114,15 @@ def main(argd):
     try:
         todolist = TodoList(filename=todofile)
     except TodoList.NoFileExists:
-        printdebug('NoFileExists at: {}'.format(todofile))
+        printdebug('No file exists at: {}'.format(todofile))
+    except TodoList.ParseError as exparse:
+        printstatus('The todo.lst couldn\'t be loaded!', error=exparse)
+        return 1
+    except Exception as ex:
+        printstatus('There was an error while loading the list:', error=ex)
+        return 1
+
+    if todolist is None:
         todolist = TodoList()
         todolist.filename = todofile
     printheader(todolist)
@@ -569,6 +577,26 @@ def get_action(argdict):
     return None
 
 
+def get_filenames(fore=None, back=None, style=None):
+    """ Return a list of acceptable todo.lst file paths.
+        Returns [DEFAULTFILE] or [DEFAULTFILE, LOCALFILE].
+        Arguments:
+            fore, back, style : Arguments for color().
+                                If any of these arguments are given,
+                                color() is called on each item before returning
+                                the list.
+
+    """
+    if DEFAULTFILE == LOCALFILE:
+        files = [DEFAULTFILE]
+    else:
+        files = sorted((DEFAULTFILE, LOCALFILE))
+
+    if any((fore, back, style)):
+        return [color(s, fore=fore, back=back, style=style) for s in files]
+    return files
+
+
 def get_key(keyname=None):
     """ Wrapper for todolist.get_key(). If an invalid keyname is passed,
         an error message is printed and None is returned.
@@ -615,20 +643,46 @@ def printheader(todolst=None):
     if todolst:
         # When the todo list has items print the header.
         itemcount = todolst.get_count()
-        headerstr = ' '.join([
-            color(str(itemcount), fore='blue', style='bold'),
-            color('Todo', style='bold'),
-            '{} loaded from:'.format('item' if (itemcount == 1) else 'items'),
-            color(todolst.filename, fore='blue'),
-        ])
-    else:
-        # Empty, or new todolist.
+        itemcountstr = color(str(itemcount), fore='blue', style='bold')
+        itemplural = 'item' if itemcount == 1 else 'items'
         headerstr = ' '.join((
             color('Todo', style='bold'),
-            'v.',
-            VERSION,
-            'loaded.'
+            'list loaded from:',
+            color(todolst.filename, fore='blue'),
+            '({} {})'.format(itemcountstr, itemplural)
         ))
+    else:
+        if todolst.filename and os.path.exists(todolst.filename):
+            # Empty, or new todolist.
+            headerstr = ' '.join((
+                color('Todo', style='bold'),
+                'list loaded from:',
+                color(todolst.filename, fore='blue'),
+                '({})'.format(color('Empty', fore='blue', style='bold'))
+            ))
+        else:
+            # Uninitialized TodoList.
+            filemsg = color('No todo.lst found', fore='blue', style='bold')
+            headerstr = ' '.join((
+                color('Todo', style='bold'),
+                'v.',
+                VERSION,
+                'loaded.',
+                '({})'.format(filemsg)
+            ))
+            # Add an extra help message about what files we are looking for.
+            filenames = get_filenames(fore='cyan')
+            defaultfiles = '\n    '.join(filenames)
+            if len(filenames) == 1:
+                fileplural = 'this file'
+            else:
+                fileplural = 'one of these files'
+            filewarn = '\n'.join((
+                'Add an item, or create {}:',
+                '    {}'
+            )).format(fileplural, defaultfiles)
+            headerstr = '\n'.join((headerstr, filewarn))
+
     print(headerstr)
 
 
@@ -674,7 +728,7 @@ def printstatus(msg, key=None, index=None, item=None, error=False):
     """
     msgfmt = ['{message}']
     if error:
-        msgargs = {'fore': 'red', 'style': 'bold'}
+        msgargs = {'fore': 'red'}
     else:
         msgargs = {'fore': 'cyan'}
     msgfmtargs = {'message': color(msg, **msgargs)}
@@ -1259,9 +1313,13 @@ class TodoList(UserDict):
         for keyname in sorted(data):
             keyitems = data[keyname]
             todokey = TodoKey(label=keyname)
-            for index in sorted(keyitems):
-                text = keyitems[index]
-                todokey.add_item(item=text)
+            if isinstance(keyitems, dict):
+                for itemkey in sorted(keyitems):
+                    text = keyitems[itemkey]
+                    todokey.add_item(item=text)
+            elif isinstance(keyitems, list):
+                for text in keyitems:
+                    todokey.add_item(item=text)
             self.data[keyname] = todokey
 
         # Set the default key to the first key found, if there is data
@@ -1404,14 +1462,22 @@ class TodoList(UserDict):
                 results.append((keyname, founditems))
         return results
 
-    def to_json(self):
+    def to_json(self, usedict=False):
         """ Return the json string for this todo list. """
         d = {}
         for keyname, todokey in self.data.items():
-            d[keyname] = {}
-            for index, item in todokey.to_dict().items():
-                itemtext = item.tostring(color=False, usetextmarker=True)
-                d[keyname][index] = itemtext
+            # Keys can be represented as dicts or lists.
+            d[keyname] = {} if usedict else []
+            if usedict:
+                # Use the old dict format for items.
+                for index, item in todokey.to_dict().items():
+                    itemtext = item.tostring(color=False, usetextmarker=True)
+                    d[keyname][index] = itemtext
+            else:
+                # Use a simple list for items.
+                for item in todokey.data:
+                    itemtext = item.tostring(color=False, usetextmarker=True)
+                    d[keyname].append(itemtext)
 
         try:
             jsondata = json.dumps(d, indent=4, sort_keys=True)
