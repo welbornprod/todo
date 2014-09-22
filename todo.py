@@ -584,6 +584,7 @@ def get_key(keyname=None):
 def kwarg_str(d):
     """ Just converts a dict into a keyword-arg-looking string.
         kwarg_str({'this': True, 'thing': 25}) == 'this=True, thing=25'
+        For use in debug messages.
     """
     if hasattr(d, 'items'):
         return ', '.join('{}={}'.format(k, v) for k, v in d.items())
@@ -601,20 +602,26 @@ def printdebug(text=None, data=None):
 
 def printheader(todolst=None):
     """ Print the program header message. """
+    # Use the global todolist when not specified.
     if todolst is None:
-        headerstr = ' '.join([
-            color('Todo', style='bold'),
-            'list loaded.'])
-    else:
-        itemcount = todolist.get_count()
+        todolst = todolist
+        
+    if todolst:
+        # When the todo list has items print the header.
+        itemcount = todolst.get_count()
         headerstr = ' '.join([
             color(str(itemcount), fore='blue', style='bold'),
             color('Todo', style='bold'),
             '{} loaded from:'.format('item' if (itemcount == 1) else 'items'),
-            color(todolist.filename, fore='blue'),
+            color(todolst.filename, fore='blue'),
         ])
-    if todolst:
-        print(headerstr)
+    else:
+        # Empty, or new todolist.
+        headerstr = ' '.join([
+            color('Todo', style='bold'),
+            'list loaded.'])
+    print(headerstr)
+
 
 
 def printobj(d, indent=0):
