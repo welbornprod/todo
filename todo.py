@@ -90,6 +90,7 @@ USAGESTR = """{versionstr}
 DEBUG = False
 DEBUGARGS = False
 DEFAULTFILE = os.path.join(SCRIPTDIR, 'todo.lst')
+LOCALFILE = os.path.join(os.getcwd(), 'todo.lst')
 # Global TodoList() to work with (..set in main())
 todolist = None
 
@@ -106,13 +107,16 @@ def main(argd):
         printdebug("Arguments:", data=argd)
         return 0
 
+    # Look for a local copy of todo.lst before loading the global list.
+    todofile = LOCALFILE if os.path.exists(LOCALFILE) else DEFAULTFILE
+
     # Load todolist if available.
     try:
-        todolist = TodoList(filename=DEFAULTFILE)
+        todolist = TodoList(filename=todofile)
     except TodoList.NoFileExists:
-        printdebug('NoFileExists at: {}'.format(DEFAULTFILE))
+        printdebug('NoFileExists at: {}'.format(todofile))
         todolist = TodoList()
-        todolist.filename = DEFAULTFILE
+        todolist.filename = todofile
     printheader(todolist)
 
     # Build a map of cmdline-args to functions.
@@ -607,7 +611,7 @@ def printheader(todolst=None):
     # Use the global todolist when not specified.
     if todolst is None:
         todolst = todolist
-        
+
     if todolst:
         # When the todo list has items print the header.
         itemcount = todolst.get_count()
@@ -619,11 +623,13 @@ def printheader(todolst=None):
         ])
     else:
         # Empty, or new todolist.
-        headerstr = ' '.join([
+        headerstr = ' '.join((
             color('Todo', style='bold'),
-            'list loaded.'])
+            'v.',
+            VERSION,
+            'loaded.'
+        ))
     print(headerstr)
-
 
 
 def printobj(d, indent=0):
@@ -1284,6 +1290,10 @@ class TodoList(UserDict):
         except EnvironmentError as exread:
             errmsg = 'Unable to read: {}'.format(filename)
             raise TodoList.LoadError(errmsg) from exread
+
+        if not rawdata.strip():
+            # Empty file.
+            return self.load_data({})
 
         try:
             jsonobj = json.loads(rawdata)
