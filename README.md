@@ -33,47 +33,31 @@ library:
 Usage:
 ------
 
-Add an item to the default key:
+There are many options. I tried to make it as intuitive as possible. I won't
+list them all here, but I will show you the basic usage.
 
-    todo "Get groceries."
+    # Add an item
+    todo 'Go to the store'
 
-Move that todo item to a new group/another group:
+    # Add an item with a label/key.
+    todo coding 'Debug that thing.'
 
-    todo -m 0 "In Town"
+    # Rename a key.
+    todo --renamekey 'No Label' all
 
-0 is the index of the item, you can also use:
+    # Move an item to another key.
+    todo --movetokey 'Debug that' all
 
-    todo -m "Get groc" "In Town"
-    # ...because it is looking for an index, regex pattern, or text.
+    # List all items.
+    todo
 
-At this point there is only 1 'key', so you don't have to name the key.
+    # List all items in a key.
+    todo coding
 
-If we add another key then we may need to specify:
+Screenshot:
+-----------
 
-    todo "New Key" "My new item"
-
-Now we have 2 keys, they are alphabetically sorted and if you don't
-specify a key, the top one is used.
-
-You can mark that item as important (color the item purple):
-
-    todo -i "New Key" "^My"
-    # Regex was used there to find the item. The first item found is picked.
-
-You can rename a key:
-
-    todo -n "New Key" "important stuff"
-
-You can remove a key and all of its items. If a key has more than one
-item, confirmation is needed.
-
-    todo -K "important stuff"
-
-To list all of your items just run `todo`.
-
-To list only a single key:
-
-    todo -l "important stuff"
+![todo](http://welbornprod.com/static/images/todo/todo-example.png)
 
 
 You can move items to new positions in the same key by index or name
