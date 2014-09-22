@@ -70,6 +70,8 @@ USAGESTR = """{versionstr}
         -l,--list                  : List items from a certain key.
                                      Defaults to: (first key)
         -L,--listall               : List all items from all keys.
+                                     This is the default action when no
+                                     arguments are given.
         -m,--movetokey             : Move item to new or other key.
         -n,--renamekey             : Give a key another name/label.
         -p,--position              : Move item to a new position in the same
