@@ -16,7 +16,7 @@ from collections import UserDict, UserList
 import docopt
 
 NAME = 'Todo'
-VERSION = '2.0.0-3'
+VERSION = '2.0.0-4'
 VERSIONSTR = '{} v. {}'.format(NAME, VERSION)
 SCRIPT = os.path.split(os.path.abspath(sys.argv[0]))[1]
 SCRIPTDIR = os.path.abspath(sys.path[0])
@@ -41,7 +41,7 @@ USAGESTR = """{versionstr}
 
     Options:
         KEY                        : Key or label for the item.
-                                     Defaults to None or null (no key).
+                                     Defaults to 'No Label'.
         ITEM                       : Item to add, or query to use when finding
                                      an item. When looking items up, the item
                                      number may also be used.
@@ -110,6 +110,7 @@ def main(argd):
     except TodoList.NoFileExists:
         printdebug('NoFileExists at: {}'.format(DEFAULTFILE))
         todolist = TodoList()
+        todolist.filename = DEFAULTFILE
     printheader(todolist)
 
     # Build a map of cmdline-args to functions.
@@ -303,11 +304,15 @@ def do_json():
 def do_listall():
     """ List all items in all keys. """
     retall = 0
-    for keyname in todolist.keynames():
+    names = todolist.keynames()
+    for keyname in names:
         ret = do_listkey(keyname)
         if ret == 1:
             retall = 1
             printstatus('Error listing key:', key=keyname, error=True)
+    if not names:
+        msg = color('No items saved yet.', fore='red')
+        print('\n{}\n'.format(msg))
     return retall
 
 
@@ -608,7 +613,8 @@ def printheader(todolst=None):
             '{} loaded from:'.format('item' if (itemcount == 1) else 'items'),
             color(todolist.filename, fore='blue'),
         ])
-    print(headerstr)
+    if todolst:
+        print(headerstr)
 
 
 def printobj(d, indent=0):
@@ -889,6 +895,9 @@ class TodoItem(object):
             self.important = True
             self.text = self.text[len(TodoItem.important_str):]
 
+    def __bool__(self):
+        return bool(self.text)
+
     def __repr__(self):
         return self.__str__()
 
@@ -937,6 +946,9 @@ class TodoKey(UserList):
             kwargs.pop('label')
         super().__init__(*args, **kwargs)
         printdebug('TodoKey(label=\'{}\')'.format(self.label))
+
+    def __bool__(self):
+        return bool(self.data)
 
     def __repr__(self):
         lines = ['{}:'.format(colorkey(self.label))]
@@ -1140,6 +1152,9 @@ class TodoList(UserDict):
         super().__init__(*args, **kwargs)
         if self.filename is not None:
             self.load_file(self.filename)
+
+    def __bool__(self):
+        return bool(self.data)
 
     def add_item(self, text, key=None, important=False):
         """ Add an item, with an option to save under a certain key.
