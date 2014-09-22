@@ -48,6 +48,12 @@ list them all here, but I will show you the basic usage.
     # Move an item to another key.
     todo --movetokey 'Debug that' all
 
+    # Add an important item (colored bold and bright when listed)
+    todo -ai coding 'Refactor the mess.'
+
+    # Mark an existing item important.
+    todo -i coding 'Debug that'
+
     # List all items.
     todo
 
@@ -59,12 +65,15 @@ Screenshot:
 
 ![todo](http://welbornprod.com/static/images/todo/todo-example.png)
 
+When looking up an item you can use it's index, text, or a regular expression.
+It will let you know when more than one item matches.
 
 You can move items to new positions in the same key by index or name
 ('top', 'bottom', 'down', 'up'). You can move an item to another key.
 You can mark them as important or unimportant, print the list as JSON to
 stdout, or search for items using regex/text/indexes.
 
-I wrote this for myself and set it to run when BASH loads an interactive
-session. This way I am reminded of my todo list often. If it is useful to
-other people then great. Take it, change it, use it, whatever.
+I wrote this for myself and I actually use it a lot. I set it to run when BASH
+loads an interactive session. This way I am reminded of my todo list often.
+If it is useful to other people then great.
+Take it, change it, use it, whatever.
