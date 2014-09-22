@@ -92,7 +92,7 @@ Here are some of the most common uses for todo:
 
         todo -I coding 'Debug that'
 
-* List all items (*-L or no arguments*):
+* List all items (*`-L` or no arguments*):
 
         todo
 
