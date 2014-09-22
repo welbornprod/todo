@@ -213,8 +213,8 @@ Todo library:
 
 The `TodoList()` class and friends do not `print` anything. Exceptions are
 raised when problems are encountered.
-There are some custom exception classes used, based on `Exception`, IndexError`,
-and `ValueError`.
+There are some custom exception classes used, based on `Exception`,
+`IndexError`, and `ValueError`.
 Methods are documented with which errors they are known to raise.
 
 
