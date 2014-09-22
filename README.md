@@ -211,7 +211,7 @@ Todo library:
 
     ...and the others (remove, search, move, etc.)
 
-The `TodoList()` class and friends do not `print` anything. Exceptions are
+The `TodoList` class and friends do not `print` anything. Exceptions are
 raised when problems are encountered.
 There are some custom exception classes used, based on `Exception`,
 `IndexError`, and `ValueError`.
