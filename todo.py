@@ -16,7 +16,7 @@ from collections import UserDict, UserList
 import docopt
 
 NAME = 'Todo'
-VERSION = '2.0.0-5'
+VERSION = '2.0.1'
 VERSIONSTR = '{} v. {}'.format(NAME, VERSION)
 SCRIPT = os.path.split(os.path.abspath(sys.argv[0]))[1]
 SCRIPTDIR = os.path.abspath(sys.path[0])
@@ -164,6 +164,8 @@ def build_actions(argdict):
     useritem = argdict['ITEM'] or None
     rawkey = argdict['KEY']
     userkey = rawkey or TodoKey.null
+    printdebug('Using key: {}'.format(userkey))
+
     userimportant = argdict['--important']
     actions = {
         '--add': {
@@ -256,6 +258,27 @@ def build_actions(argdict):
     return actions
 
 
+def check_empty_key(key=None):
+    """ Check to see if a key is empty, and offer to remove it if it is. """
+    todokey = todolist.get_key(key)
+    if todokey is None:
+        printdebug('Invalid empty key check for: {} (is {})'.format(
+            key,
+            todokey))
+        return False
+
+    if len(todokey) == 0:
+        printdebug('Key is empty: {}'.format(todokey.label))
+        warn = ('This key is empty now:', todokey.label)
+        msg = 'Would you like to remove the key?'
+        if confirm(msg, warn=warn):
+            printdebug('Removing empty key: {}'.format(todokey.label))
+            return True if do_removekey(key) == 0 else False
+
+    printdebug('Key was not empty.')
+    return False
+
+
 def confirm(question, header=None, warn=None, forceanswer=False):
     """ Confirm a yes/no question, returns True/False (yes/no).
         Optional header and/or warning msg printed before the question.
@@ -264,7 +287,10 @@ def confirm(question, header=None, warn=None, forceanswer=False):
     if header:
         print('\n{}'.format(header))
     if warn:
-        print('\n{}'.format(colorerr(warn)))
+        if isinstance(warn, str):
+            print('\n{}'.format(colorerr(warn)))
+        elif isinstance(warn, (list, tuple)):
+            print('\n{} {}'.format(colorerr(warn[0]), colorval(warn[1])))
 
     if not question.endswith('?'):
         question = '{}?'.format(question)
@@ -338,9 +364,12 @@ def do_listkey(key=None):
 
     if todokey is None:
         return 1
-    print('    {}'.format(str(todokey).replace('\n', '\n    ')))
-    if not todokey:
-        printstatus('    (no items in this key)', error=True)
+
+    if todokey:
+        print('    {}'.format(str(todokey).replace('\n', '\n    ')))
+    else:
+        print('    {}'.format(str(todokey)))
+        printstatus('        (no items in this key)', error=True, nobreak=True)
     return 0
 
 
@@ -431,12 +460,10 @@ def do_move_tokey(query, newkey, key=None):
         return 1
 
     printstatus('Move item:', key=keystr, item=item)
-    if len(oldkey) == 0:
-        warnmsg = '{} is empty now.'.format(oldkey.label)
-        msg = 'Would you like to remove it?'
-        if confirm(msg, warn=warnmsg):
-            return do_removekey(oldkey.label, confirmation=False)
 
+    if check_empty_key(oldkey):
+        # No save (do_removekey already saved).
+        return 0
     return do_save()
 
 
@@ -446,19 +473,27 @@ def do_remove(query, key=None, confirmation=True):
     if confirmation:
         foundkey, index, item = todolist.find_item(query, key=key)
         if (index is not None) and (item is not None):
-            warn = 'This will remove the item: {}...'.format(str(item)[:40])
+            warn = (
+                'This will remove the item:',
+                '{}...'.format(str(item)[:40]))
             msg = 'Are you sure you want to remove this item?'
             if not confirm(msg, warn=warn):
                 printstatus('User Cancelled', error=True)
                 return 1
 
     removed = todolist.remove_item(query, key=key)
-    keystr = colorkey(key)
     if removed is None:
         printstatus('Could not find:', key=key, item=query)
         return 1
 
     printstatus('Removed:', key=key, item=removed)
+
+    # Offer to delete the key if it is empty.
+    if check_empty_key(key):
+        # No save (do_removekey already saved),
+        return 0
+
+    printdebug('Key still has items: {}'.format(key))
     return do_save()
 
 
@@ -721,7 +756,8 @@ def printobj(d, indent=0):
         print('{}{}'.format(' ' * indent, colorval(str(d))))
 
 
-def printstatus(msg, key=None, index=None, item=None, error=False):
+def printstatus(
+        msg, key=None, index=None, item=None, error=False, nobreak=False):
     """ Prints a color-coded status message.
         If error is Truthy, the message will be red.
         If error is an Exception, the error message will be printed also.
@@ -738,12 +774,18 @@ def printstatus(msg, key=None, index=None, item=None, error=False):
         msgfmtargs['keyname'] = colorkey(keystr)
     if index is not None:
         msgfmt.append('[{index}]')
-        msgfmtargs['index'] = color(str(index), fore='magenta', style='bold')
+        msgfmtargs['index'] = color(
+            str(index),
+            fore='magenta',
+            style='bold')
     if item is not None:
         msgfmt.append('{item}')
         msgfmtargs['item'] = color(str(item), fore='green')
 
-    print('\n{}'.format(' '.join(msgfmt).format(**msgfmtargs)))
+    print(''.join((
+        '' if nobreak else '\n',
+        ' '.join(msgfmt).format(**msgfmtargs)
+    )))
     # Print the exception message if it was passed with 'error'.
     if isinstance(error, Exception):
         errmsg = str(error)
@@ -1000,7 +1042,7 @@ class TodoKey(UserList):
     # The top key is used as the default when the list is not empty.
     null = 'No Label'
 
-    class __NoLabel(object):
+    class __NoLabel(object):  # noqa
 
         def __bool__(self):
             return False
@@ -1009,10 +1051,13 @@ class TodoKey(UserList):
         label = kwargs.get('label', TodoKey.__NoLabel())
         # Empty label values default to TodoKey.null.
         self.label = label if label else TodoKey.null
-        if not isinstance(label, TodoKey.__NoLabel):
+        try:
             # Label kwarg was given. Pop it so it doesn't interfere with
             # UserList.__init__()
             kwargs.pop('label')
+        except KeyError:
+            pass
+
         super().__init__(*args, **kwargs)
         printdebug('TodoKey(label=\'{}\')'.format(self.label))
 
@@ -1133,7 +1178,6 @@ class TodoKey(UserList):
         """ Removes several items that match an index or regex pattern/text.
             Returns a list of the removed TodoItems, or [].
         """
-        items = self.search_items(query)
         removed = []
         for index, item in self.search_items(query):
             removeditem = self.data.pop(index)
@@ -1277,6 +1321,10 @@ class TodoList(UserDict):
             If no key exists, returns None.
             Case insensitive.
         """
+        if isinstance(key, TodoKey):
+            # A valid TodoKey was passed in already.
+            return key
+
         key = key or TodoKey.null
         key = key.lower()
         printdebug('TodoList.get_key(\'{}\')'.format(key))
@@ -1482,7 +1530,9 @@ class TodoList(UserDict):
         try:
             jsondata = json.dumps(d, indent=4, sort_keys=True)
         except (TypeError, ValueError) as exjson:
-            errmsg = 'Unable to generate JSON from: {}'.format(converted)
+            errmsg = 'Unable to generate JSON from: {!r} \n{}'.format(
+                d,
+                exjson)
             raise TodoList.ParseError(errmsg)
         return jsondata
 
