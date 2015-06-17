@@ -65,8 +65,8 @@ USAGESTR = """{versionstr}
                                  behind the scenes.
         -e FILE,--export FILE  : Export a key's items as JSON.
                                  FILE should be the file name for an existing
-                                 JSON file, or a non-existant file.
-                                 If '-' is passed, content will be printed to
+                                 JSON file, or a new file to be created.
+                                 If '-' is passed, data will be printed to
                                  stdout.
         -h,--help              : Show this help message.
         -i,--important         : Mark item as important (bold/red).
