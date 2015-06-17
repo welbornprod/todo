@@ -16,7 +16,7 @@ from collections import UserDict, UserList
 import docopt
 
 NAME = 'Todo'
-VERSION = '2.0.1'
+VERSION = '2.1.0'
 VERSIONSTR = '{} v. {}'.format(NAME, VERSION)
 SCRIPT = os.path.split(os.path.abspath(sys.argv[0]))[1]
 SCRIPTDIR = os.path.abspath(sys.path[0])
@@ -28,6 +28,7 @@ USAGESTR = """{versionstr}
         {script} [-a | -b | -d | -i | -r | -R | -s | -t | -u] ITEM [-D]
         {script} -a [-i] KEY ITEM [-D]
         {script} -a [-i] ITEM [-D]
+        {script} -e FILE KEY [-D]
         {script} -I KEY ITEM [-D]
         {script} -I ITEM [-D]
         {script} -K KEY [-D]
@@ -40,50 +41,55 @@ USAGESTR = """{versionstr}
         {script} -p ITEM <new_position> [-D]
 
     Options:
-        KEY               : Key or label for the item.
-                            Defaults to 'No Label'.
-        ITEM              : Item to add, or query to use when finding
-                            an item. When looking items up, the item
-                            number may also be used.
-        <new_key>         : New key for item when moving between keys.
-        <new_keyname>     : New key name when renaming a key.
-        <new_position>    : New position number for item when position
-                            action is used.
-                            Index must be (>= 0 and < list length).
-                            You may also use 't[op]', or 'b[ottom]'.
-        -a,--add          : Add an item to the list.
-                            You may omit this option and just enter
-                            the item (with optional key first),
-                            unless you want to mark an item as
-                            important while adding it.
-        -b,--bottom       : Unprioritize item. (put on the bottom).
-        -c,--clear        : Clear all items. Confirmation needed.
-        -d,--down         : Bump item down one spot on the list.
-        -D,--debug        : Debug mode, prints extra information.
-                            Gives you a look into what's going on
-                            behind the scenes.
-        -h,--help         : Show this help message.
-        -i,--important    : Mark item as important (bold/red).
-        -I,--unimportant  : Mark item as unimportant.
-        -j,--json         : Show list in JSON format.
-        -K,--removekey    : Remove a key/label. (includes all items)
-        -l,--list         : List items from a certain key.
-                            Defaults to: (first key)
-        -L,--listall      : List all items from all keys.
-                            This is the default action when no
-                            arguments are given.
-        -m,--movetokey    : Move item to new or other key.
-        -n,--renamekey    : Give a key another name/label.
-        -p,--position     : Move item to a new position in the same
-                            key.
-        -r,--remove       : Remove an item from the list.
-                            Accepts item number or regex to match.
-                            Confirmation is needed.
-        -R,--REMOVE       : Same as --remove, no confirmation though.
-        -s,--search       : Search for items by index or regex/text.
-        -t,--top          : Prioritize item (put on top of the list).
-        -u,--up           : Bump item up one spot on the list.
-        -v,--version      : Show version.
+        KEY                    : Key or label for the item.
+                                 Defaults to 'No Label'.
+        ITEM                   : Item to add, or query to use when finding
+                                 an item. When looking items up, the item
+                                 number may also be used.
+        <new_key>              : New key for item when moving between keys.
+        <new_keyname>          : New key name when renaming a key.
+        <new_position>         : New position number for item when position
+                                 action is used.
+                                 Index must be (>= 0 and < list length).
+                                 You may also use 't[op]', or 'b[ottom]'.
+        -a,--add               : Add an item to the list.
+                                 You may omit this option and just enter
+                                 the item (with optional key first),
+                                 unless you want to mark an item as
+                                 important while adding it.
+        -b,--bottom            : Unprioritize item. (put on the bottom).
+        -c,--clear             : Clear all items. Confirmation needed.
+        -d,--down              : Bump item down one spot on the list.
+        -D,--debug             : Debug mode, prints extra information.
+                                 Gives you a look into what's going on
+                                 behind the scenes.
+        -e FILE,--export FILE  : Export a key's items as JSON.
+                                 FILE should be the file name for an existing
+                                 JSON file, or a non-existant file.
+                                 If '-' is passed, content will be printed to
+                                 stdout.
+        -h,--help              : Show this help message.
+        -i,--important         : Mark item as important (bold/red).
+        -I,--unimportant       : Mark item as unimportant.
+        -j,--json              : Show list in JSON format.
+        -K,--removekey         : Remove a key/label. (includes all items)
+        -l,--list              : List items from a certain key.
+                                 Defaults to: (first key)
+        -L,--listall           : List all items from all keys.
+                                 This is the default action when no
+                                 arguments are given.
+        -m,--movetokey         : Move item to new or other key.
+        -n,--renamekey         : Give a key another name/label.
+        -p,--position          : Move item to a new position in the same
+                                 key.
+        -r,--remove            : Remove an item from the list.
+                                 Accepts item number or regex to match.
+                                 Confirmation is needed.
+        -R,--REMOVE            : Same as --remove, no confirmation though.
+        -s,--search            : Search for items by index or regex/text.
+        -t,--top               : Prioritize item (put on top of the list).
+        -u,--up                : Bump item up one spot on the list.
+        -v,--version           : Show version.
 """.format(script=SCRIPT, versionstr=VERSIONSTR)
 
 # Global flags/settings. ------------------------------------------
@@ -185,6 +191,10 @@ def build_actions(argdict):
             'function': do_move_item,
             'args': [useritem, 'down'],
             'kwargs': {'key': userkey},
+        },
+        '--export': {
+            'function': do_export,
+            'kwargs':  {'key': userkey, 'filename': argdict['--export']}
         },
         '--important': {
             'function': do_mark_important,
@@ -329,6 +339,26 @@ def do_clear():
     return 1
 
 
+def do_export(key=None, filename=None):
+    """ Export a key, or all keys to another JSON file.
+
+        Arguments:
+            key       : TodoKey to export.
+            filename  : Existing or new JSON file name. Content will be printed
+                        to stdout if '-' is given.
+    """
+    todokey = get_key(key or TodoKey.null)
+    if todokey is None:
+        return 1
+
+    if filename == '-':
+        print(todokey.to_json())
+        return 0
+
+    printstatus('Merging key into {}:'.format(filename), key=todokey)
+    return 0 if merge_json(todokey.to_json_obj(), filename) else 1
+
+
 def do_json():
     """ Print JSON format of TodoList. """
     try:
@@ -358,9 +388,7 @@ def do_listall():
 
 def do_listkey(key=None):
     """ List all items within a key. """
-
-    key = key or TodoKey.null
-    todokey = get_key(key)
+    todokey = get_key(key or TodoKey.null)
 
     if todokey is None:
         return 1
@@ -380,9 +408,8 @@ def do_mark_important(query, key=None, adding=False, important=True):
     """
     if adding:
         return do_add(query, key=key, important=important)
-    key = key or TodoKey.null
 
-    todokey = get_key(key)
+    todokey = get_key(key or TodoKey.null)
     if todokey is None:
         return 1
 
@@ -394,7 +421,7 @@ def do_mark_important(query, key=None, adding=False, important=True):
     item.important = important
     importantstr = 'important' if important else 'unimportant'
     msg = 'Marked as {}:'.format(importantstr)
-    printstatus(msg, key=key, index=index, item=item)
+    printstatus(msg, key=todokey, index=index, item=item)
     return do_save()
 
 
@@ -660,6 +687,62 @@ def kwarg_str(d):
     return ''
 
 
+def merge_json(dictobj, filename):
+    """ Merge JSON data into an existing JSON file, or create a new file.
+        Arguments:
+            dictobj   : A dict with string keys. These keys will be updated
+                        in an existing JSON dict, or created for new files.
+                        This dict should already be JSON serializable.
+            filename  : New or existing JSON file name.
+    """
+
+    # Try reading existing JSON data.
+    try:
+        with open(filename, 'r') as fread:
+            data = fread.read()
+        printdebug('Using existing data from: {}'.format(filename))
+    except FileNotFoundError:
+        printdebug('Creating a new JSON file: {}'.format(filename))
+        data = '{}'
+
+    # Create object from existing JSON, even if it's just an empty dict.
+    try:
+        jsondata = json.loads(data)
+    except ValueError as ex:
+        printstatus('Not a valid JSON file: {}'.format(filename), error=ex)
+        return False
+
+    # Merge new data with the old.
+    try:
+        jsondata.update(dictobj)
+    except (AttributeError, TypeError):
+        printstatus('\n'.join((
+            'Not a valid JSON dict: {filename}',
+            'Trying to merge: {newdata!r}',
+            '           into: {olddata!r}')).format(
+                filename=filename,
+                newdata=dictobj,
+                olddata=jsondata))
+        return False
+
+    # Write the result to file.
+    try:
+        with open(filename, 'w') as f:
+            json.dump(jsondata, f, indent=4, sort_keys=True)
+    except EnvironmentError as exwrite:
+        printstatus(
+            'Failed to write JSON data: {}'.format(filename),
+            error=exwrite)
+        return False
+    except (ValueError, TypeError) as exjson:
+        printstatus(
+            'Failed to create JSON: {}'.format(filename),
+            error=exjson)
+        return False
+
+    return True
+
+
 def printdebug(text=None, data=None):
     """ Debug printer. Prints simple text, or pretty prints dicts/lists. """
     if DEBUG:
@@ -761,6 +844,13 @@ def printstatus(
     """ Prints a color-coded status message.
         If error is Truthy, the message will be red.
         If error is an Exception, the error message will be printed also.
+        Arguments:
+            msg      : Message to print.
+            key      : Optional key name or TodoKey for formatting key names.
+            index    : Optional index (int) for formatting indexes.
+            item     : Optional str or TodoItem for formatting items.
+            error    : Optional Exception, or True for printing error messages.
+            nobreak  : Whether to use spaces to separate each piece of info.
     """
     msgfmt = ['{message}']
     if error:
@@ -1015,6 +1105,10 @@ class TodoItem(object):
     def __str__(self):
         return self.tostring(color=True)
 
+    def to_json(self):
+        """ JSON-friendly str representation. No color, using text-markers. """
+        return self.tostring(color=False, usetextmarker=True)
+
     def tostring(self, color=False, usetextmarker=False):
         """ String repr of this item. It's basically just the .text for the
             item. If it is an important item and color=True,
@@ -1215,16 +1309,22 @@ class TodoKey(UserList):
 
     def to_json(self):
         """ Turn this key into JSON data. Uses zero-based indexes. """
-        d = {}
-        # Convert TodoItems() to str for JSON.
-        for index, item in self.to_dict():
-            d[index] = item.tostring(color=False, usetextmarker=True)
+        # Add key name for final JSON format.
         try:
-            jsondata = json.dumps({self.label: d}, sort_keys=True, indent=4)
+            jsondata = json.dumps(self.to_json_obj(), sort_keys=True, indent=4)
         except ValueError:
             errmsg = 'Unable to translate key to JSON: {}'.format(self.label)
             raise TodoList.ParseError(errmsg)
         return jsondata
+
+    def to_json_obj(self):
+        """ Turn this key into a JSON-friendly dict object. """
+        # Convert TodoItems() to str for JSON, and add key name.
+        return {
+            self.label: {
+                i: itm.to_json() for i, itm in self.to_dict().items()
+            }
+        }
 
 
 class TodoList(UserDict):
