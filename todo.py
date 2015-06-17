@@ -63,7 +63,7 @@ USAGESTR = """{versionstr}
         -D,--debug             : Debug mode, prints extra information.
                                  Gives you a look into what's going on
                                  behind the scenes.
-        -e FILE,--export FILE  : Export a key's items as JSON.
+        -e FILE,--export FILE  : Export a single key's items as JSON.
                                  FILE should be the file name for an existing
                                  JSON file, or a new file to be created.
                                  If '-' is passed, data will be printed to
@@ -78,7 +78,7 @@ USAGESTR = """{versionstr}
         -L,--listall           : List all items from all keys.
                                  This is the default action when no
                                  arguments are given.
-        -m,--movetokey         : Move item to new or other key.
+        -m,--movetokey         : Move item to a new key, or another key.
         -n,--renamekey         : Give a key another name/label.
         -p,--position          : Move item to a new position in the same
                                  key.
@@ -1153,6 +1153,9 @@ class TodoKey(UserList):
             pass
 
         super().__init__(*args, **kwargs)
+        # These will only print when running ./todo.py itself.
+        # Otherwise, todo.DEBUG would have to be set.
+        # So, by default nothing is ever printed from these classes.
         printdebug('TodoKey(label=\'{}\')'.format(self.label))
 
     def __bool__(self):
