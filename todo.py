@@ -16,7 +16,7 @@ from collections import UserDict, UserList
 import docopt
 
 NAME = 'Todo'
-VERSION = '2.1.0'
+VERSION = '2.2.0'
 VERSIONSTR = '{} v. {}'.format(NAME, VERSION)
 SCRIPT = os.path.split(os.path.abspath(sys.argv[0]))[1]
 SCRIPTDIR = os.path.abspath(sys.path[0])
@@ -104,7 +104,7 @@ todolist = None
 # Main entry point ------------------------------------------------
 
 
-def main(argd):
+def main(argd):  # noqa
     """ Main entry point, expects doctopt arg dict as argd """
     global DEBUG, todolist, userkey, useritem
     DEBUG = argd['--debug']
@@ -155,7 +155,11 @@ def main(argd):
         return do_listall()
 
     # Run the action that was chosen based on cmdline-args.
-    retvalue = runaction()
+    try:
+        retvalue = runaction()
+    except Exception as ex:
+        printstatus('Error:', error=ex)
+        return 1
 
     printdebug(text='Todo Items after this run:', data=todolist)
     return retvalue
@@ -169,8 +173,8 @@ def build_actions(argdict):
     """
     useritem = argdict['ITEM'] or None
     rawkey = argdict['KEY']
-    userkey = rawkey or TodoKey.null
-    printdebug('Using key: {}'.format(userkey))
+    userkey = rawkey or None
+    printdebug('Using key: {!r}'.format(userkey))
 
     userimportant = argdict['--important']
     actions = {
@@ -268,7 +272,7 @@ def build_actions(argdict):
     return actions
 
 
-def check_empty_key(key=None):
+def check_empty_key(key=None, silentsave=False):
     """ Check to see if a key is empty, and offer to remove it if it is. """
     todokey = todolist.get_key(key)
     if todokey is None:
@@ -283,7 +287,9 @@ def check_empty_key(key=None):
         msg = 'Would you like to remove the key?'
         if confirm(msg, warn=warn):
             printdebug('Removing empty key: {}'.format(todokey.label))
-            return True if do_removekey(key) == 0 else False
+            if do_removekey(todokey, silentsave=silentsave) == 0:
+                return True
+            return False
 
     printdebug('Key was not empty.')
     return False
@@ -496,37 +502,48 @@ def do_move_tokey(query, newkey, key=None):
 
 def do_remove(query, key=None, confirmation=True):
     """ Remove an item (if no key is given, the default key is used.) """
-    key = key or TodoKey.null
-    if confirmation:
-        foundkey, index, item = todolist.find_item(query, key=key)
-        if (index is not None) and (item is not None):
-            warn = (
-                'This will remove the item:',
-                '{}...'.format(str(item)[:40]))
-            msg = 'Are you sure you want to remove this item?'
-            if not confirm(msg, warn=warn):
-                printstatus('User Cancelled', error=True)
-                return 1
-
-    removed = todolist.remove_item(query, key=key)
-    if removed is None:
-        printstatus('Could not find:', key=key, item=query)
+    items = todolist.find_item(query, key=key)
+    if not items:
+        printstatus('Could not find:', key=(key or '(any key)'), item=query)
+        if query in todolist.keynames():
+            printstatus('Did you mean to use --removekey?')
         return 1
 
-    printstatus('Removed:', key=key, item=removed)
+    if confirmation:
+        itemlen = len(items)
+        warnmsg = '\n'.join((
+            'This will remove {cnt} item{plural}:',
+            '    {items}')).format(
+                cnt=itemlen,
+                plural='' if itemlen == 1 else 's',
+                items='\n    '.join(
+                    '{}: {}'.format(key.label, str(item)[:45])
+                    for key, _, item in items
+                )
+            )
+        msg = 'Are you sure you want to remove {plural}?'.format(
+            plural='this item' if itemlen == 1 else 'these items'
+        )
+        if not confirm(msg, warn=warnmsg):
+            printstatus('User Cancelled', error=True)
+            return 1
 
-    # Offer to delete the key if it is empty.
-    if check_empty_key(key):
-        # No save (do_removekey already saved),
-        return 0
+    for key, index, item in items:
+        removed = key.remove_item(index)
+        if removed is None:
+            printstatus('Could not find:', key=key, item=query)
+            return 1
+        printstatus('Removed:', key=key, item=removed)
+        # Offer to delete the key if it is empty.
+        if not check_empty_key(key, silentsave=True):
+            printdebug('Key still has items: {}'.format(key.label))
 
-    printdebug('Key still has items: {}'.format(key))
     return do_save()
 
 
-def do_removekey(key=None, confirmation=True):
+def do_removekey(key=None, confirmation=True, silentsave=False):
     """ Remove a key and all of it's items. """
-    key = key or TodoKey.null
+    key = key if key is not None else TodoKey.null
     todokey = get_key(key)
     if todokey is None:
         return 1
@@ -539,14 +556,16 @@ def do_removekey(key=None, confirmation=True):
             printstatus('User cancelled.', error=True)
             return 1
 
-    del todolist.data[key]
-    printstatus('Removed:', key=key)
-    return do_save()
+    if todolist.delete_key(todokey):
+        printstatus('Removed:', key=todokey)
+    else:
+        printstatus('Unable to remove key:', key=todokey)
+    return do_save(silent=silentsave)
 
 
 def do_renamekey(newkeyname, key=None):
     """ Rename a key. """
-    key = key or TodoKey.null
+    key = key if key is not None else TodoKey.null
     # TODO: All of these checks need to be TodoList methods...
     # TODO: write TODO comments in the TODO apps code.
     # TODO: use the Todo app to write TODOS.
@@ -576,17 +595,21 @@ def do_renamekey(newkeyname, key=None):
     return do_save()
 
 
-def do_save():
+def do_save(silent=False):
     """ Save all items to disk. """
     itemcount = todolist.save_file()
     if itemcount > 0:
-        printstatus('Items saved:', index=itemcount)
+        if not silent:
+            printstatus('Items saved:', index=itemcount)
         return 0
     elif itemcount == 0:
-        printstatus('Items saved. (list is blank)')
+        if not silent:
+            printstatus('Items saved. (list is blank)')
         return 0
+
     # Error saving.
-    printstatus('Unable to save items!', error=True)
+    if not silent:
+        printstatus('Unable to save items!', error=True)
     return 1
 
 
@@ -804,7 +827,7 @@ def printheader(todolst=None):
     print(headerstr)
 
 
-def printobj(d, indent=0):
+def printobj(d, indent=0):  # noqa
     """ Print a dict/list/tuple, with pretty formatting.
         Uses color from ColorCodes (colorkey(), colorval())
     """
@@ -1248,6 +1271,9 @@ class TodoKey(UserList):
             (int index, None), (None, Regex Pattern)
             or on error, raises TodoList.BadQueryError().
         """
+        if (query is None) or (query == ''):
+            raise TodoList.BadQueryError('Empty query!')
+
         try:
             intval = int(query)
             querypat = None
@@ -1255,7 +1281,7 @@ class TodoKey(UserList):
             intval = None
             try:
                 querypat = re.compile(query, re.IGNORECASE)
-            except re.error as exreg:
+            except (re.error, TypeError) as exreg:
                 errmsg = 'Invalid query: {}\n{}'.format(query, exreg)
                 raise TodoList.BadQueryError(errmsg)
         return intval, querypat
@@ -1339,6 +1365,9 @@ class TodoList(UserDict):
     class BadIndexError(IndexError):
         pass
 
+    class BadKeyError(KeyError):
+        pass
+
     class BadQueryError(Exception):
         pass
 
@@ -1378,7 +1407,7 @@ class TodoList(UserDict):
         """
         if not text:
             raise TodoList.AddError('No item to add.')
-        key = key or TodoKey.null
+        key = key if key is not None else TodoKey.null
         printdebug('TodoList.add_item(\'{}\', key=\'{}\')'.format(text, key))
         # Find the existing key, or create a new one.
         existing = self.get_key(key, default=TodoKey(label=key))
@@ -1393,22 +1422,46 @@ class TodoList(UserDict):
         self.data = {}
         return True
 
+    def delete_key(self, key=None):
+        """ Delete an entire key from this list.
+            The key can be a name, or a TodoKey.
+        """
+        if key is None:
+            return False
+        if isinstance(key, TodoKey):
+            key = key.label
+        try:
+            del self.data[key]
+        except (TypeError, KeyError) as ex:
+            errmsg = 'Unable to remove key: {}\n{}'.format(key, ex)
+            raise TodoList.BadKeyError(errmsg)
+        return True
+
     def find_item(self, query, key=None):
         """ Finds a specific item in the list.
             The query can be a regex pattern (str), or an index.
             If 'key' is not set, TodoKey.null is used.
-            Returns (Keyname, Index, TodoItem()) on success.
-            Returns (Keyname, None, None) if no result is found.
-            Returns (None, None, None) if no key could be found.
+            Returns a list [(TodoKey(), Index, TodoItem()] on success.
+            Returns [] if no result is found.
         """
-        key = key or TodoKey.null
+        if key:
+            printdebug('Searching key: {}'.format(key))
+            todokey = self.get_key(key, None)
+            if todokey is None:
+                return []
 
-        todokey = self.get_key(key, None)
-        if todokey is None:
-            return (None, None, None)
+            index, item = todokey.find_item(query)
+            if (index is not None) and item:
+                return [(todokey, index, item)]
+            return []
 
-        index, item = todokey.find_item(query)
-        return (todokey.label, index, item)
+        printdebug('Searching all keys...')
+        found = []
+        for todokey in self.todokeys():
+            index, item = todokey.find_item(query)
+            if (index is not None) and item:
+                found.append((todokey, index, item))
+        return found
 
     def get_count(self):
         """ Get an overall count of items in all keys.
@@ -1428,7 +1481,7 @@ class TodoList(UserDict):
             # A valid TodoKey was passed in already.
             return key
 
-        key = key or TodoKey.null
+        key = key if key is not None else TodoKey.null
         key = key.lower()
         printdebug('TodoList.get_key(\'{}\')'.format(key))
         for todokeyname in self.data:
@@ -1525,7 +1578,7 @@ class TodoList(UserDict):
             Returns (None, None, None, None) on failure.
             Possibly raises TodoList.BadIndexError, TodoList.SameIndexError
         """
-        key = key or TodoKey.null
+        key = key if key is not None else TodoKey.null
         todokey = self.get_key(key, None)
         if todokey is None:
             return (None, None, None, None)
@@ -1538,7 +1591,7 @@ class TodoList(UserDict):
             Returns (oldTodoKey, newTodoKey, TodoItem) on success.
             Returns (None, None, None) on failure.
         """
-        key = key or TodoKey.null
+        key = key if key is not None else TodoKey.null
         todokey = self.get_key(key, None)
         if todokey is None:
             return (None, None, None)
@@ -1557,7 +1610,7 @@ class TodoList(UserDict):
             If the item was successfully removed, it is returned.
             Returns None on failure.
         """
-        key = key or TodoKey.null
+        key = key if key is not None else TodoKey.null
         todokey = self.get_key(key, None)
         if todokey is None:
             return None
@@ -1566,7 +1619,7 @@ class TodoList(UserDict):
 
     def rename_key(self, newkeyname, key=None):
         """ Rename a key. Old key defaults to TodoKey.null """
-        key = key or TodoKey.null
+        key = key if key is not None else TodoKey.null
         try:
             removed = self.data.pop(key)
         except KeyError:
