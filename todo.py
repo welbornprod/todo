@@ -16,7 +16,7 @@ from collections import UserDict, UserList
 import docopt
 
 NAME = 'Todo'
-VERSION = '2.2.0'
+VERSION = '2.2.1'
 VERSIONSTR = '{} v. {}'.format(NAME, VERSION)
 SCRIPT = os.path.split(os.path.abspath(sys.argv[0]))[1]
 SCRIPTDIR = os.path.abspath(sys.path[0])
@@ -485,18 +485,26 @@ def do_move_item(query, newindex, key=None):
 
 def do_move_tokey(query, newkey, key=None):
     """ Move an item from one key to another, or to a new key. """
-    key = key or TodoKey.null
-    oldkey, movedkey, item = todolist.move_item_tokey(query, newkey, key=key)
-    keystr = '{} -> {}'.format(key, newkey)
-    if (oldkey is None) and (newkey is None) and (item is None):
-        printstatus('Unable to do move:', key=keystr, item=query)
+    found = todolist.find_item(query, key=key)
+    if not found:
+        printstatus('Unable to find that item:', item='query')
         return 1
+    errs = 0
+    for todokey, index, item in found:
+        oldkey, movedkey, item = todolist.move_item_tokey(
+            index,
+            newkey,
+            key=todokey)
+        keystr = '{} -> {}'.format(todokey.label, newkey)
+        if (oldkey is None) and (newkey is None) and (item is None):
+            printstatus('Unable to do move:', key=keystr, item=query)
+            errs += 1
+        else:
+            printstatus('Move item:', key=keystr, item=item)
 
-    printstatus('Move item:', key=keystr, item=item)
+        if not check_empty_key(oldkey, silentsave=True):
+            printdebug('Key still has items: {}'.format(oldkey.label))
 
-    if check_empty_key(oldkey):
-        # No save (do_removekey already saved).
-        return 0
     return do_save()
 
 
