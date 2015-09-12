@@ -494,7 +494,7 @@ def do_move_tokey(query, newkey, key=None):
     """ Move an item from one key to another, or to a new key. """
     found = todolist.find_item(query, key=key)
     if not found:
-        printstatus('Unable to find that item:', item='query')
+        printstatus('Unable to find that item:', item=query)
         return 1
     errs = 0
     for todokey, index, item in found:
