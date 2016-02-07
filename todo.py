@@ -23,29 +23,32 @@ import docopt
 #       A dict may also help with parsing and operating on the results.
 
 NAME = 'Todo'
-VERSION = '2.2.1'
+VERSION = '2.3.0'
 VERSIONSTR = '{} v. {}'.format(NAME, VERSION)
 SCRIPT = os.path.split(os.path.abspath(sys.argv[0]))[1]
 SCRIPTDIR = os.path.abspath(sys.path[0])
 
 USAGESTR = """{versionstr}
     Usage:
-        {script} [-c | -h | -j | -v] [-D]
-        {script} [-a | -b | -d | -i | -r | -R | -s | -t | -u] KEY ITEM [-D]
-        {script} [-a | -b | -d | -i | -r | -R | -s | -t | -u] ITEM [-D]
-        {script} -a [-i] KEY ITEM [-D]
-        {script} -a [-i] ITEM [-D]
-        {script} -e FILE KEY [-D]
-        {script} -I KEY ITEM [-D]
-        {script} -I ITEM [-D]
-        {script} -K KEY [-D]
-        {script} -l [KEY] [-D]
-        {script} -L [-D]
-        {script} -m KEY ITEM <new_key> [-D]
-        {script} -m ITEM <new_key> [-D]
-        {script} -n [KEY] <new_keyname> [-D]
-        {script} -p KEY ITEM <new_position> [-D]
-        {script} -p ITEM <new_position> [-D]
+        {script} -h | -v
+        {script} [-a | -b | -d | -i | -r | -R | -s | -t | -u] KEY ITEM
+                 [-f filename] [-D]
+        {script} [-a | -b | -d | -i | -r | -R | -s | -t | -u] ITEM
+                 [-f filename] [-D]
+        {script} [-c | -j]                  [-f filename] [-D]
+        {script} -a [-i] KEY ITEM           [-f filename] [-D]
+        {script} -a [-i] ITEM               [-f filename] [-D]
+        {script} -e FILE KEY                [-f filename] [-D]
+        {script} -I KEY ITEM                [-f filename] [-D]
+        {script} -I ITEM                    [-f filename] [-D]
+        {script} -K KEY                     [-f filename] [-D]
+        {script} -l [KEY]                   [-f filename] [-D]
+        {script} -L                         [-f filename] [-D]
+        {script} -m KEY ITEM <new_key>      [-f filename] [-D]
+        {script} -m ITEM <new_key>          [-f filename] [-D]
+        {script} -n [KEY] <new_keyname>     [-f filename] [-D]
+        {script} -p KEY ITEM <new_position> [-f filename] [-D]
+        {script} -p ITEM <new_position>     [-f filename] [-D]
 
     Options:
         KEY                    : Key or label for the item.
@@ -75,6 +78,7 @@ USAGESTR = """{versionstr}
                                  JSON file, or a new file to be created.
                                  If '-' is passed, data will be printed to
                                  stdout.
+        -f FILE,--file FILE    : Use this input file instead of todo.lst.
         -h,--help              : Show this help message.
         -i,--important         : Mark item as important (bold/red).
         -I,--unimportant       : Mark item as unimportant.
@@ -120,8 +124,13 @@ def main(argd):  # noqa
         printdebug("Arguments:", data=argd)
         return 0
 
-    # Look for a local copy of todo.lst before loading the global list.
-    todofile = LOCALFILE if os.path.exists(LOCALFILE) else DEFAULTFILE
+    # Use provided file, then local, then the default.
+    if argd['--file']:
+        todofile = argd['--file']
+    elif os.path.exists(LOCALFILE):
+        todofile = LOCALFILE
+    else:
+        todofile = DEFAULTFILE
 
     # Load todolist if available.
     try:
@@ -205,7 +214,7 @@ def build_actions(argdict):
         },
         '--export': {
             'function': do_export,
-            'kwargs':  {'key': userkey, 'filename': argdict['--export']}
+            'kwargs': {'key': userkey, 'filename': argdict['--export']}
         },
         '--important': {
             'function': do_mark_important,
@@ -333,7 +342,10 @@ def do_add(text, key=None, important=False):
     if not text:
         printstatus('No item to add!', error=True)
         return 1
-    printdebug('do_add(key={},important={},"{}")'.format(key, important, text))
+    printdebug('do_add(key={},important={},"{}")'.format(
+        key,
+        important,
+        text))
     key, newitem = todolist.add_item(text, key=key, important=important)
     printstatus('Added item:', key=key, item=newitem)
     return do_save()
@@ -342,7 +354,8 @@ def do_add(text, key=None, important=False):
 def do_clear():
     """ Clear all items (after confirmation.) """
     itemcnt = todolist.get_count()
-    confirmwarn = 'This will clear all {} items from the list.'.format(itemcnt)
+    confirmwarn = 'This will clear all {} items from the list.'.format(
+        itemcnt)
     confirmmsg = 'Clear the entire todo list?'
     if confirm(confirmmsg, warn=confirmwarn):
         todolist.clear()
@@ -357,8 +370,8 @@ def do_export(key=None, filename=None):
 
         Arguments:
             key       : TodoKey to export.
-            filename  : Existing or new JSON file name. Content will be printed
-                        to stdout if '-' is given.
+            filename  : Existing or new JSON file name. Content will be
+                        printed to stdout if '-' is given.
     """
     todokey = get_key(key or TodoKey.null)
     if todokey is None:
@@ -410,7 +423,10 @@ def do_listkey(key=None):
         print('    {}'.format(str(todokey).replace('\n', '\n    ')))
     else:
         print('    {}'.format(str(todokey)))
-        printstatus('        (no items in this key)', error=True, nobreak=True)
+        printstatus(
+            '        (no items in this key)',
+            error=True,
+            nobreak=True)
     return 0
 
 
@@ -535,7 +551,7 @@ def do_remove(query, key=None, confirmation=True):
                     '{}: {}'.format(key.label, str(item)[:45])
                     for key, _, item in items
                 )
-            )
+        )
         msg = 'Are you sure you want to remove {plural}?'.format(
             plural='this item' if itemlen == 1 else 'these items'
         )
@@ -670,7 +686,11 @@ def get_action(argdict):
                 dbugmsg = (
                     'get_action(): '
                     '{} -> {}'
-                    '({}, {})').format(argname, fname, args, kwarg_str(kwargs))
+                    '({}, {})').format(
+                        argname,
+                        fname,
+                        args,
+                        kwarg_str(kwargs))
                 printdebug(dbugmsg)
             # Return the function with the appropriate arguments/keyword-args.
             return functools.partial(func, *args, **kwargs)
@@ -683,8 +703,8 @@ def get_filenames(fore=None, back=None, style=None):
         Arguments:
             fore, back, style : Arguments for color().
                                 If any of these arguments are given,
-                                color() is called on each item before returning
-                                the list.
+                                color() is called on each item before
+                                returning the list.
 
     """
     if DEFAULTFILE == LOCALFILE:
@@ -887,7 +907,7 @@ def printstatus(
             key      : Optional key name or TodoKey for formatting key names.
             index    : Optional index (int) for formatting indexes.
             item     : Optional str or TodoItem for formatting items.
-            error    : Optional Exception, or True for printing error messages.
+            error    : Optional Exception, or True for printing error msgs.
             nobreak  : Whether to use spaces to separate each piece of info.
     """
     msgfmt = ['{message}']
@@ -910,15 +930,18 @@ def printstatus(
         msgfmt.append('{item}')
         msgfmtargs['item'] = color(str(item), fore='green')
 
-    print(''.join((
-        '' if nobreak else '\n',
-        ' '.join(msgfmt).format(**msgfmtargs)
-    )))
+    print(
+        ''.join((
+            '' if nobreak else '\n',
+            ' '.join(msgfmt).format(**msgfmtargs)
+        )),
+        file=sys.stderr if error else sys.stdout
+    )
     # Print the exception message if it was passed with 'error'.
     if isinstance(error, Exception):
         errmsg = str(error)
         if errmsg:
-            print(colorerr(errmsg))
+            print(colorerr(errmsg), file=sys.stderr)
 
 # Classes ---------------------------------------------------------
 
@@ -972,7 +995,7 @@ class ColorCodes(object):
             code = self.codes[stype].get(style, None)
             if code:
                 # Reset codes come first (or they will override other styles)
-                if style in ('none', 'normal', 'reset', 'reset_all'):
+                if style in {'none', 'normal', 'reset', 'reset_all'}:
                     codes.insert(0, self.codefmt(code))
                 else:
                     codes.append(self.codefmt(code))
@@ -1002,9 +1025,14 @@ class ColorCodes(object):
         """ Same as colorize, but adds a style->reset_all after it. """
         if text is None:
             text = ''
-        colorized = self.colorize(text=text, style=style, back=back, fore=fore)
-        s = '{colrtxt}{reset}'.format(colrtxt=colorized,
-                                      reset=self.color_code(style='reset_all'))
+        colorized = self.colorize(
+            text=text,
+            style=style,
+            back=back,
+            fore=fore)
+        s = '{colrtxt}{reset}'.format(
+            colrtxt=colorized,
+            reset=self.color_code(style='reset_all'))
         return s
 
     def wordljust(self, text=None, length=0, char=' ', **kwargs):
@@ -1045,12 +1073,30 @@ class ColorCodes(object):
 # Set global ColorCodes instance and helper functions.
 colors = ColorCodes()
 color = colors.word
-colordebug = lambda s: color(text=s, fore='green')
-colorindex = lambda i: color(text=str(i), fore='blue', style='bright')
-colorimp = lambda s: color(text=str(s), fore='magenta', style='bright')
-colorerr = lambda s: color(text=s, fore='red', style='bright')
-colorkey = lambda s: color(text=s, fore='blue', style='bright')
-colorval = lambda s: color(text=s, fore='green')
+
+
+def colordebug(s):
+    return color(text=s, fore='green')
+
+
+def colorindex(i):
+    return color(text=str(i), fore='blue', style='bright')
+
+
+def colorimp(s):
+    return color(text=str(s), fore='magenta', style='bright')
+
+
+def colorerr(s):
+    return color(text=s, fore='red', style='bright')
+
+
+def colorkey(s):
+    return color(text=s, fore='blue', style='bright')
+
+
+def colorval(s):
+    return color(text=s, fore='green')
 
 
 class ColorDocoptExit(SystemExit):
@@ -1105,8 +1151,9 @@ def coloredhelp(s):
     return '\n'.join(newlines)
 
 
-def docoptextras(help, version, options, doc):
-    if help and any((o.name in ('-h', '--help')) and o.value for o in options):
+def docoptextras(helpstr, version, options, doc):
+    if (helpstr and
+            any((o.name in ('-h', '--help')) and o.value for o in options)):
         print(coloredhelp(doc).strip("\n"))
         sys.exit()
     if version and any(o.name == '--version' and o.value for o in options):
@@ -1144,7 +1191,8 @@ class TodoItem(object):
         return self.tostring(color=True)
 
     def to_json(self):
-        """ JSON-friendly str representation. No color, using text-markers. """
+        """ JSON-friendly str representation. No color, using text-markers.
+        """
         return self.tostring(color=False, usetextmarker=True)
 
     def tostring(self, color=False, usetextmarker=False):
@@ -1355,7 +1403,10 @@ class TodoKey(UserList):
         """ Turn this key into JSON data. Uses zero-based indexes. """
         # Add key name for final JSON format.
         try:
-            jsondata = json.dumps(self.to_json_obj(), sort_keys=True, indent=4)
+            jsondata = json.dumps(
+                self.to_json_obj(),
+                sort_keys=True,
+                indent=4)
         except ValueError:
             errmsg = 'Unable to translate key to JSON: {}'.format(self.label)
             raise TodoList.ParseError(errmsg)
@@ -1610,7 +1661,9 @@ class TodoList(UserDict):
         todokey = self.get_key(key, None)
         if todokey is None:
             return (None, None, None)
-        printdebug('TodoList.move...key(\'{}\', \'{}\')'.format(query, newkey))
+        printdebug('TodoList.move...key(\'{}\', \'{}\')'.format(
+            query,
+            newkey))
         removed = todokey.remove_item(query)
         printdebug('TodoList.move_item_tokey: moving {}'.format(removed))
         if removed is None:
