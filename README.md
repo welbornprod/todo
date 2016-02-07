@@ -117,22 +117,25 @@ A simple `todo 'new item'` will work to get started. To remove it use
 
 ```
 Usage:
-    todo [-c | -h | -j | -v] [-D]
-    todo [-a | -b | -d | -i | -r | -R | -s | -t | -u] KEY ITEM [-D]
-    todo [-a | -b | -d | -i | -r | -R | -s | -t | -u] ITEM [-D]
-    todo -a [-i] KEY ITEM [-D]
-    todo -a [-i] ITEM [-D]
-    todo -e FILE KEY [-D]
-    todo -I KEY ITEM [-D]
-    todo -I ITEM [-D]
-    todo -K KEY [-D]
-    todo -l [KEY] [-D]
-    todo -L [-D]
-    todo -m KEY ITEM <new_key> [-D]
-    todo -m ITEM <new_key> [-D]
-    todo -n [KEY] <new_keyname> [-D]
-    todo -p KEY ITEM <new_position> [-D]
-    todo -p ITEM <new_position> [-D]
+    todo -h | -v
+    todo [-a | -b | -d | -i | -r | -R | -s | -t | -u] KEY ITEM
+         [-f filename] [-D]
+    todo [-a | -b | -d | -i | -r | -R | -s | -t | -u] ITEM
+         [-f filename] [-D]
+    todo [-c | -j]                  [-f filename] [-D]
+    todo -a [-i] KEY ITEM           [-f filename] [-D]
+    todo -a [-i] ITEM               [-f filename] [-D]
+    todo -e FILE KEY                [-f filename] [-D]
+    todo -I KEY ITEM                [-f filename] [-D]
+    todo -I ITEM                    [-f filename] [-D]
+    todo -K KEY                     [-f filename] [-D]
+    todo -l [KEY]                   [-f filename] [-D]
+    todo -L                         [-f filename] [-D]
+    todo -m KEY ITEM <new_key>      [-f filename] [-D]
+    todo -m ITEM <new_key>          [-f filename] [-D]
+    todo -n [KEY] <new_keyname>     [-f filename] [-D]
+    todo -p KEY ITEM <new_position> [-f filename] [-D]
+    todo -p ITEM <new_position>     [-f filename] [-D]
 
 Options:
     KEY                    : Key or label for the item.
@@ -157,11 +160,12 @@ Options:
     -D,--debug             : Debug mode, prints extra information.
                              Gives you a look into what's going on
                              behind the scenes.
-    -e FILE,--export FILE  : Export a key's items as JSON.
+    -e FILE,--export FILE  : Export a single key's items as JSON.
                              FILE should be the file name for an existing
                              JSON file, or a new file to be created.
                              If '-' is passed, data will be printed to
                              stdout.
+    -f FILE,--file FILE    : Use this input file instead of todo.lst.
     -h,--help              : Show this help message.
     -i,--important         : Mark item as important (bold/red).
     -I,--unimportant       : Mark item as unimportant.
@@ -172,7 +176,7 @@ Options:
     -L,--listall           : List all items from all keys.
                              This is the default action when no
                              arguments are given.
-    -m,--movetokey         : Move item to new or other key.
+    -m,--movetokey         : Move item to a new key, or another key.
     -n,--renamekey         : Give a key another name/label.
     -p,--position          : Move item to a new position in the same
                              key.
@@ -184,7 +188,6 @@ Options:
     -t,--top               : Prioritize item (put on top of the list).
     -u,--up                : Bump item up one spot on the list.
     -v,--version           : Show version.
-
 ```
 
 

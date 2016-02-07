@@ -32,9 +32,9 @@ USAGESTR = """{versionstr}
     Usage:
         {script} -h | -v
         {script} [-a | -b | -d | -i | -r | -R | -s | -t | -u] KEY ITEM
-                 [-f filename] [-D]
+             [-f filename] [-D]
         {script} [-a | -b | -d | -i | -r | -R | -s | -t | -u] ITEM
-                 [-f filename] [-D]
+             [-f filename] [-D]
         {script} [-c | -j]                  [-f filename] [-D]
         {script} -a [-i] KEY ITEM           [-f filename] [-D]
         {script} -a [-i] ITEM               [-f filename] [-D]
@@ -1118,7 +1118,8 @@ def coloredhelp(s):
     newlines = []
     bigindent = (' ' * 16)
     for line in s.split('\n'):
-        if line.strip('\n').strip().strip(':') in ('Usage', 'Options'):
+        linestrip = line.strip()
+        if linestrip.strip(':') in ('Usage', 'Options'):
             # label
             line = color(line, fore='none', style='bold')
         elif (':' in line) and (not line.startswith(bigindent)):
@@ -1137,7 +1138,7 @@ def coloredhelp(s):
             # colorize desc
             valstr = color(val, fore='green')
             line = ':'.join([optstr, valstr])
-        elif line.startswith(bigindent):
+        elif line.startswith(bigindent) and (not linestrip.startswith('[')):
             # continued desc string..
             line = color(line, fore='green')
         elif (not line.startswith('    ')):
