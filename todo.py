@@ -13,7 +13,26 @@ import re
 import sys
 from collections import UserDict, UserList
 
-import docopt
+
+bad_import_msg = '\n'.join((
+    'Error: {err}',
+    'You may need to install {name} with pip: pip install {package}'
+)).format
+
+try:
+    from colr import (
+        __version__ as colr_version,
+        auto_disable as colr_auto_disable,
+        color,
+    )
+except ImportError as ex:
+    print(bad_import_msg(err=ex, name='Colr', package='colr'))
+    sys.exit(1)
+try:
+    import docopt
+except ImportError as ex:
+    print(bad_import_msg(err=ex, name='Docopt', package='docopt'))
+    sys.exit(1)
 
 # TODO: New remove/move operations should work on multiple key items.
 #       Right now they only work on 1 item per key, because of
@@ -23,7 +42,7 @@ import docopt
 #       A dict may also help with parsing and operating on the results.
 
 NAME = 'Todo'
-VERSION = '2.3.0'
+VERSION = '2.3.1'
 VERSIONSTR = '{} v. {}'.format(NAME, VERSION)
 SCRIPT = os.path.split(os.path.abspath(sys.argv[0]))[1]
 SCRIPTDIR = os.path.abspath(sys.path[0])
@@ -35,7 +54,7 @@ USAGESTR = """{versionstr}
              [-f filename] [-D]
         {script} [-a | -b | -d | -i | -r | -R | -s | -t | -u] ITEM
              [-f filename] [-D]
-        {script} [-c | -j]                  [-f filename] [-D]
+        {script} [-c] | ([-j] [KEY])        [-f filename] [-D]
         {script} -a [-i] KEY ITEM           [-f filename] [-D]
         {script} -a [-i] ITEM               [-f filename] [-D]
         {script} -e FILE KEY                [-f filename] [-D]
@@ -73,16 +92,11 @@ USAGESTR = """{versionstr}
         -D,--debug             : Debug mode, prints extra information.
                                  Gives you a look into what's going on
                                  behind the scenes.
-        -e FILE,--export FILE  : Export a single key's items as JSON.
-                                 FILE should be the file name for an existing
-                                 JSON file, or a new file to be created.
-                                 If '-' is passed, data will be printed to
-                                 stdout.
         -f FILE,--file FILE    : Use this input file instead of todo.lst.
         -h,--help              : Show this help message.
         -i,--important         : Mark item as important (bold/red).
         -I,--unimportant       : Mark item as unimportant.
-        -j,--json              : Show list in JSON format.
+        -j,--json              : Show list, or a specific key in JSON format.
         -K,--removekey         : Remove a key/label. (includes all items)
         -l,--list              : List items from a certain key.
                                  Defaults to: (first key)
@@ -123,6 +137,7 @@ def main(argd):  # noqa
         DEBUG = True
         printdebug("Arguments:", data=argd)
         return 0
+    printdebug_header()
 
     # Use provided file, then local, then the default.
     if argd['--file']:
@@ -147,7 +162,8 @@ def main(argd):  # noqa
     if todolist is None:
         todolist = TodoList()
         todolist.filename = todofile
-    printheader(todolist)
+    if not argd['--json']:
+        printheader(todolist)
 
     # Build a map of cmdline-args to functions.
     # Return the proper function to run, or None.
@@ -212,10 +228,6 @@ def build_actions(argdict):
             'args': [useritem, 'down'],
             'kwargs': {'key': userkey},
         },
-        '--export': {
-            'function': do_export,
-            'kwargs': {'key': userkey, 'filename': argdict['--export']}
-        },
         '--important': {
             'function': do_mark_important,
             'args': [useritem],
@@ -227,6 +239,7 @@ def build_actions(argdict):
         },
         '--json': {
             'function': do_json,
+            'kwargs': {'key': userkey}
         },
         '--list': {
             'function': do_listkey,
@@ -367,6 +380,7 @@ def do_clear():
 
 def do_export(key=None, filename=None):
     """ Export a key, or all keys to another JSON file.
+        This will try to safely merge with existing files.
 
         Arguments:
             key       : TodoKey to export.
@@ -376,8 +390,7 @@ def do_export(key=None, filename=None):
     todokey = get_key(key or TodoKey.null)
     if todokey is None:
         return 1
-
-    if filename == '-':
+    if filename in (None, '-'):
         print(todokey.to_json())
         return 0
 
@@ -385,8 +398,11 @@ def do_export(key=None, filename=None):
     return 0 if merge_json(todokey.to_json_obj(), filename) else 1
 
 
-def do_json():
+def do_json(key=None):
     """ Print JSON format of TodoList. """
+    if key:
+        return do_export(key=key)
+
     try:
         jsondata = todolist.to_json()
     except TodoList.ParseError:
@@ -810,6 +826,22 @@ def printdebug(text=None, data=None):
             printobj(data)
 
 
+def printdebug_header():
+    """ Print some debug info about this Todo version, if DEBUG is truthy. """
+    printdebug(
+        '\n'.join((
+            'Using:',
+            '      colr: {colr_ver}',
+            '    docopt: {docopt_ver}'
+            '    python: {py_ver}',
+        )).format(
+            colr_ver=colr_version,
+            docopt_ver=docopt.__version__,
+            py_ver='{v.major}.{v.minor}.{v.micro}'.format(v=sys.version_info)
+        )
+    )
+
+
 def printheader(todolst=None):
     """ Print the program header message. """
     # Use the global todolist when not specified.
@@ -943,137 +975,8 @@ def printstatus(
         if errmsg:
             print(colorerr(errmsg), file=sys.stderr)
 
+
 # Classes ---------------------------------------------------------
-
-
-class ColorCodes(object):
-
-    """ This class colorizes text for an ansi terminal. """
-
-    def __init__(self):
-        # Linux style color code numbers.
-        self.codes = {
-            'fore': {
-                'black': '30', 'red': '31',
-                'green': '32', 'yellow': '33',
-                'blue': '34', 'magenta': '35',
-                'cyan': '36', 'white': '37',
-                'reset': '39'},
-            'back': {
-                'black': '40', 'red': '41', 'green': '42',
-                'yellow': '43', 'blue': '44',
-                'magenta': '45', 'cyan': '46', 'white': '47',
-                'reset': '49'},
-            'style': {
-                'bold': '1', 'bright': '1', 'dim': '2',
-                'normal': '22', 'none': '22',
-                'reset_all': '0',
-                'reset': '0'},
-        }
-
-        # Format string for full color code.
-        self.codeformat = '\033[{}m'
-        self.codefmt = lambda s: self.codeformat.format(s)
-
-        # Shortcuts to most used functions.
-        self.bold = self.colorbold
-        self.normal = self.colornormal
-        self.word = self.colorword
-        self.ljust = self.wordljust
-        self.rjust = self.wordrjust
-
-    def color_code(self, fore=None, back=None, style=None):
-        """ Return the code for this style/color
-            Fixes style positions so a RESET doesn't affect a following color.
-        """
-
-        codes = []
-        userstyles = {'style': style, 'back': back, 'fore': fore}
-        for stype in userstyles:
-            style = userstyles[stype].lower() if userstyles[stype] else None
-            # Get code number for this style.
-            code = self.codes[stype].get(style, None)
-            if code:
-                # Reset codes come first (or they will override other styles)
-                if style in {'none', 'normal', 'reset', 'reset_all'}:
-                    codes.insert(0, self.codefmt(code))
-                else:
-                    codes.append(self.codefmt(code))
-        return ''.join(codes)
-
-    def colorize(self, text=None, fore=None, back=None, style=None):
-        """ Return text colorized.
-            fore,back,style  : Name of fore or back color, or style name.
-        """
-        if text is None:
-            text = ''
-        return '{codes}{txt}'.format(codes=self.color_code(style=style,
-                                                           back=back,
-                                                           fore=fore),
-                                     txt=text)
-
-    def colorbold(self, text=None, fore=None, back=None):
-        """ Shorthand for style='bright' """
-        return self.colorword(text=text, fore=fore, back=back, style='bright')
-
-    def colornormal(self, text=None):
-        """ Shorthand for fore, back, = 'normal', 'normal' """
-        s = 'reset'
-        return self.colorword(text=text, fore=s, back=s, style=s)
-
-    def colorword(self, text=None, fore=None, back=None, style=None):
-        """ Same as colorize, but adds a style->reset_all after it. """
-        if text is None:
-            text = ''
-        colorized = self.colorize(
-            text=text,
-            style=style,
-            back=back,
-            fore=fore)
-        s = '{colrtxt}{reset}'.format(
-            colrtxt=colorized,
-            reset=self.color_code(style='reset_all'))
-        return s
-
-    def wordljust(self, text=None, length=0, char=' ', **kwargs):
-        """ Color a word and left justify it.
-            Regular str.ljust won't work properly on a str with color codes.
-
-            Arguments:
-                text    : text to colorize.
-                length  : overall length after justification.
-                char    : character to use for padding. Default: ' '
-
-            Keyword Arguments:
-                fore, back, style : same as colorizepart() and word()
-        """
-        if text is None:
-            text = ''
-        spacing = char * (length - len(text))
-        colored = self.word(text=text, **kwargs)
-        return '{}{}'.format(colored, spacing)
-
-    def wordrjust(self, text=None, length=0, char=' ', **kwargs):
-        """ Color a word and right justify it.
-            Regular str.rjust won't work properly on a str with color codes.
-            Arguments:
-                text    : text to colorize.
-                length  : overall length after justification.
-                char    : character to use for padding. Default: ' '
-
-            Keyword Arguments:
-                fore, back, style : same as colorizepart() and word()
-        """
-        if text is None:
-            text = ''
-        spacing = char * (length - len(text))
-        colored = self.word(text=text, **kwargs)
-        return '{}{}'.format(spacing, colored)
-
-# Set global ColorCodes instance and helper functions.
-colors = ColorCodes()
-color = colors.word
-
 
 def colordebug(s):
     return color(text=s, fore='green')
@@ -1121,7 +1024,7 @@ def coloredhelp(s):
         linestrip = line.strip()
         if linestrip.strip(':') in ('Usage', 'Options'):
             # label
-            line = color(line, fore='none', style='bold')
+            line = color(line, fore='reset', style='bold')
         elif (':' in line) and (not line.startswith(bigindent)):
             # opt,desc line. colorize it.
             lineparts = line.split(':')
@@ -1186,7 +1089,7 @@ class TodoItem(object):
         return bool(self.text)
 
     def __repr__(self):
-        return self.__str__()
+        return self.tostring(usetextmarker=True)
 
     def __str__(self):
         return self.tostring(color=True)
@@ -1767,5 +1670,8 @@ class TodoList(UserDict):
 
 # Start of script ---------------------------------------------------
 if __name__ == '__main__':
+    # Disable colors when piping output.
+    colr_auto_disable()
+
     mainret = main(docopt.docopt(USAGESTR, version=VERSIONSTR))
     sys.exit(mainret)
