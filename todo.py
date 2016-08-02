@@ -5,6 +5,12 @@
     ...A revamp of my quick and dirty todo list app.
     -Christopher Welborn 07-21-2014
 """
+# TODO: New remove/move operations should work on multiple key items.
+#       Right now they only work on 1 item per key, because of
+#       TodoKey.find_item()
+
+# TODO: A namedtuple() may help with readability for the find_* returns.
+#       A dict may also help with parsing and operating on the results.
 
 import functools
 import json
@@ -33,13 +39,6 @@ try:
 except ImportError as ex:
     print(bad_import_msg(err=ex, name='Docopt', package='docopt'))
     sys.exit(1)
-
-# TODO: New remove/move operations should work on multiple key items.
-#       Right now they only work on 1 item per key, because of
-#       TodoKey.find_item()
-
-# TODO: A namedtuple() may help with readability for the find_* returns.
-#       A dict may also help with parsing and operating on the results.
 
 NAME = 'Todo'
 VERSION = '2.3.1'
