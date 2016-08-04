@@ -41,7 +41,7 @@ except ImportError as ex:
     sys.exit(1)
 
 NAME = 'Todo'
-VERSION = '2.3.1'
+VERSION = '2.3.2'
 VERSIONSTR = '{} v. {}'.format(NAME, VERSION)
 SCRIPT = os.path.split(os.path.abspath(sys.argv[0]))[1]
 SCRIPTDIR = os.path.abspath(sys.path[0])
@@ -61,7 +61,7 @@ USAGESTR = """{versionstr}
         {script} -I ITEM                    [-f filename] [-D]
         {script} -K KEY                     [-f filename] [-D]
         {script} -l [KEY]                   [-f filename] [-D]
-        {script} -L                         [-f filename] [-D]
+        {script} (-L | -P)                  [-f filename] [-D]
         {script} -m KEY ITEM <new_key>      [-f filename] [-D]
         {script} -m ITEM <new_key>          [-f filename] [-D]
         {script} -n [KEY] <new_keyname>     [-f filename] [-D]
@@ -106,6 +106,8 @@ USAGESTR = """{versionstr}
         -n,--renamekey         : Give a key another name/label.
         -p,--position          : Move item to a new position in the same
                                  key.
+        -P,--preview           : Preview the list. Like --listall, except
+                                 some items are cut off.
         -r,--remove            : Remove an item from the list.
                                  Accepts item number or regex to match.
                                  Confirmation is needed.
@@ -256,6 +258,10 @@ def build_actions(argdict):
             'function': do_move_item,
             'args': [useritem, argdict['<new_position>']],
             'kwargs': {'key': userkey},
+        },
+        '--preview': {
+            'function': do_listall,
+            'kwargs': {'preview': True},
         },
         '--remove': {
             'function': do_remove,
@@ -412,12 +418,12 @@ def do_json(key=None):
     return 1
 
 
-def do_listall():
+def do_listall(preview=False):
     """ List all items in all keys. """
     retall = 0
     names = todolist.keynames()
     for keyname in names:
-        ret = do_listkey(keyname)
+        ret = do_listkey(keyname, preview=preview)
         if ret == 1:
             retall = 1
             printstatus('Error listing key:', key=keyname, error=True)
@@ -427,7 +433,7 @@ def do_listall():
     return retall
 
 
-def do_listkey(key=None):
+def do_listkey(key=None, preview=False):
     """ List all items within a key. """
     todokey = get_key(key or TodoKey.null)
 
@@ -435,7 +441,8 @@ def do_listkey(key=None):
         return 1
 
     if todokey:
-        print('    {}'.format(str(todokey).replace('\n', '\n    ')))
+        keystr = todokey.preview_str() if preview else todokey.to_str()
+        print('    {}'.format(keystr.replace('\n', '\n    ')))
     else:
         print('    {}'.format(str(todokey)))
         printstatus(
@@ -563,7 +570,7 @@ def do_remove(query, key=None, confirmation=True):
                 cnt=itemlen,
                 plural='' if itemlen == 1 else 's',
                 items='\n    '.join(
-                    '{}: {}'.format(key.label, str(item)[:45])
+                    '{}: {}'.format(key.label, item.preview_str())
                     for key, _, item in items
                 )
         )
@@ -1088,17 +1095,26 @@ class TodoItem(object):
         return bool(self.text)
 
     def __repr__(self):
-        return self.tostring(usetextmarker=True)
+        return self.to_str(usetextmarker=True)
 
     def __str__(self):
-        return self.tostring(color=True)
+        return self.to_str(color=True)
+
+    def preview_str(self, color=True, usetextmarker=False):
+        """ Return a string containing a "preview" of the item's text. """
+        max_itemlen = 75
+        return self.to_str(
+            color=color,
+            usetextmarker=usetextmarker,
+            max_length=max_itemlen
+        )
 
     def to_json(self):
         """ JSON-friendly str representation. No color, using text-markers.
         """
-        return self.tostring(color=False, usetextmarker=True)
+        return self.to_str(color=False, usetextmarker=True)
 
-    def tostring(self, color=False, usetextmarker=False):
+    def to_str(self, color=False, usetextmarker=False, max_length=None):
         """ String repr of this item. It's basically just the .text for the
             item. If it is an important item and color=True,
             important items are color-coded (for terminal).
@@ -1111,6 +1127,11 @@ class TodoItem(object):
         usestr = self.text
         if usetextmarker and self.important:
             usestr = '{}{}'.format(TodoItem.important_str, usestr)
+
+        if max_length:
+            usestr = usestr.split('\n')[0][:max_length]
+            if len(self.text) > max_length:
+                usestr = '{}...'.format(usestr)
 
         if color:
             return colorimp(usestr) if self.important else usestr
@@ -1151,11 +1172,7 @@ class TodoKey(UserList):
         return bool(self.data)
 
     def __repr__(self):
-        lines = ['{}:'.format(colorkey(self.label))]
-        for index, item in enumerate(self.data):
-            lines.append('    {}: {}'.format(index, str(item)))
-
-        return '\n'.join(lines)
+        return self.to_str()
 
     def __str__(self):
         return self.__repr__()
@@ -1180,7 +1197,7 @@ class TodoKey(UserList):
         for index, item in enumerate(self.data):
             if (intval is not None) and (intval == index):
                 return index, item
-            itemtext = item.tostring(color=False)
+            itemtext = item.to_str(color=False)
             if (querypat is not None) and querypat.search(itemtext):
                 return index, item
         return (None, None)
@@ -1252,6 +1269,10 @@ class TodoKey(UserList):
                 raise TodoList.BadQueryError(errmsg)
         return intval, querypat
 
+    def preview_str(self):
+        """ A short preview list of this key's items. """
+        return self.to_str(max_items=2)
+
     def remove_item(self, query):
         """ Removes an item from this key. The query can be the index,
             or a regex pattern/text to match.
@@ -1290,7 +1311,7 @@ class TodoKey(UserList):
         intval, querypat = TodoKey.parse_query(query)
         found = []
         for index, item in enumerate(self.data):
-            itemtext = item.tostring(color=False)
+            itemtext = item.to_str(color=False)
             if (intval is not None) and (intval == index):
                 found.append((index, item))
             elif (querypat is not None) and querypat.search(itemtext):
@@ -1323,6 +1344,24 @@ class TodoKey(UserList):
                 i: itm.to_json() for i, itm in self.to_dict().items()
             }
         }
+
+    def to_str(self, max_items=None):
+        """ Return a string representation of this key, optionally cutting
+            the list off at `max_items`.
+        """
+        lines = ['{}:'.format(colorkey(self.label))]
+        for index, item in enumerate(self.data):
+            if max_items and index == max_items:
+                break
+            lines.append('    {}: {}'.format(index, str(item)))
+        else:
+            # The entire list was built.
+            return '\n'.join(lines)
+        if self.data:
+            lines.append(
+                '       (plus {} more...)'.format(len(self) - max_items)
+            )
+        return '\n'.join(lines)
 
 
 class TodoList(UserDict):
@@ -1463,8 +1502,7 @@ class TodoList(UserDict):
     def is_null_str(s):
         """ Return true if this string is a placeholder for None/null. """
         if s:
-            nulls = ('', 'null', 'none', 'no label')
-            return str(s).lower() in nulls
+            return str(s).lower() in ('', 'null', 'none', 'no label')
         return True
 
     def keynames(self):
@@ -1646,12 +1684,12 @@ class TodoList(UserDict):
             if usedict:
                 # Use the old dict format for items.
                 for index, item in todokey.to_dict().items():
-                    itemtext = item.tostring(color=False, usetextmarker=True)
+                    itemtext = item.to_str(color=False, usetextmarker=True)
                     d[keyname][index] = itemtext
             else:
                 # Use a simple list for items.
                 for item in todokey.data:
-                    itemtext = item.tostring(color=False, usetextmarker=True)
+                    itemtext = item.to_str(color=False, usetextmarker=True)
                     d[keyname].append(itemtext)
 
         try:
