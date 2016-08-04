@@ -122,7 +122,7 @@ Usage:
          [-f filename] [-D]
     todo [-a | -b | -d | -i | -r | -R | -s | -t | -u] ITEM
          [-f filename] [-D]
-    todo [-c | -j]                  [-f filename] [-D]
+    todo [-c] | ([-j] [KEY])        [-f filename] [-D]
     todo -a [-i] KEY ITEM           [-f filename] [-D]
     todo -a [-i] ITEM               [-f filename] [-D]
     todo -e FILE KEY                [-f filename] [-D]
@@ -130,7 +130,7 @@ Usage:
     todo -I ITEM                    [-f filename] [-D]
     todo -K KEY                     [-f filename] [-D]
     todo -l [KEY]                   [-f filename] [-D]
-    todo -L                         [-f filename] [-D]
+    todo (-L | -P)                  [-f filename] [-D]
     todo -m KEY ITEM <new_key>      [-f filename] [-D]
     todo -m ITEM <new_key>          [-f filename] [-D]
     todo -n [KEY] <new_keyname>     [-f filename] [-D]
@@ -160,16 +160,11 @@ Options:
     -D,--debug             : Debug mode, prints extra information.
                              Gives you a look into what's going on
                              behind the scenes.
-    -e FILE,--export FILE  : Export a single key's items as JSON.
-                             FILE should be the file name for an existing
-                             JSON file, or a new file to be created.
-                             If '-' is passed, data will be printed to
-                             stdout.
     -f FILE,--file FILE    : Use this input file instead of todo.lst.
     -h,--help              : Show this help message.
     -i,--important         : Mark item as important (bold/red).
     -I,--unimportant       : Mark item as unimportant.
-    -j,--json              : Show list in JSON format.
+    -j,--json              : Show list, or a specific key in JSON format.
     -K,--removekey         : Remove a key/label. (includes all items)
     -l,--list              : List items from a certain key.
                              Defaults to: (first key)
@@ -180,6 +175,8 @@ Options:
     -n,--renamekey         : Give a key another name/label.
     -p,--position          : Move item to a new position in the same
                              key.
+    -P,--preview           : Preview the list. Like --listall, except
+                             some items are cut off.
     -r,--remove            : Remove an item from the list.
                              Accepts item number or regex to match.
                              Confirmation is needed.
