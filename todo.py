@@ -12,13 +12,15 @@
 # TODO: A namedtuple() may help with readability for the find_* returns.
 #       A dict may also help with parsing and operating on the results.
 
+import inspect
 import functools
 import json
 import os
 import re
+import shutil
 import sys
 from collections import UserDict, UserList
-
+from contextlib import suppress
 
 bad_import_msg = '\n'.join((
     'Error: {err}',
@@ -30,6 +32,7 @@ try:
         __version__ as colr_version,
         auto_disable as colr_auto_disable,
         color,
+        Colr as C,
     )
 except ImportError as ex:
     print(bad_import_msg(err=ex, name='Colr', package='colr'))
@@ -41,7 +44,7 @@ except ImportError as ex:
     sys.exit(1)
 
 NAME = 'Todo'
-VERSION = '2.3.3'
+VERSION = '2.3.4'
 VERSIONSTR = '{} v. {}'.format(NAME, VERSION)
 SCRIPT = os.path.split(os.path.abspath(sys.argv[0]))[1]
 SCRIPTDIR = os.path.abspath(sys.path[0])
@@ -49,16 +52,18 @@ SCRIPTDIR = os.path.abspath(sys.path[0])
 USAGESTR = """{versionstr}
     Usage:
         {script} -h | -v
-        {script} [-a | -b | -d | -i | -r | -R | -s | -t | -u] KEY ITEM
+        {script} [-a | -b | -d | -r | -R | -s | -t | -u] KEY ITEM
              [-f filename] [-D]
-        {script} [-a | -b | -d | -i | -r | -R | -s | -t | -u] ITEM
+        {script} [-a | -b | -d | -r | -R | -s | -t | -u] ITEM
              [-f filename] [-D]
         {script} [-c] | ([-j] [KEY])        [-f filename] [-D]
         {script} -a [-i] KEY ITEM           [-f filename] [-D]
         {script} -a [-i] ITEM               [-f filename] [-D]
         {script} -e FILE KEY                [-f filename] [-D]
-        {script} -I KEY ITEM                [-f filename] [-D]
-        {script} -I ITEM                    [-f filename] [-D]
+        {script} -I KEY [ITEM]              [-f filename] [-D]
+        {script} -I (KEY | ITEM)            [-f filename] [-D]
+        {script} -i KEY [ITEM]              [-f filename] [-D]
+        {script} -i (KEY | ITEM)            [-f filename] [-D]
         {script} -K KEY                     [-f filename] [-D]
         {script} -l [KEY]                   [-f filename] [-D]
         {script} (-L | -P)                  [-f filename] [-D]
@@ -93,8 +98,8 @@ USAGESTR = """{versionstr}
                                  behind the scenes.
         -f FILE,--file FILE    : Use this input file instead of todo.lst.
         -h,--help              : Show this help message.
-        -i,--important         : Mark item as important (bold/red).
-        -I,--unimportant       : Mark item as unimportant.
+        -i,--important         : Mark key/item as important (bold/red).
+        -I,--unimportant       : Mark key/item as unimportant.
         -j,--json              : Show list, or a specific key in JSON format.
         -K,--removekey         : Remove a key/label. (includes all items)
         -l,--list              : List items from a certain key.
@@ -194,7 +199,7 @@ def main(argd):  # noqa
         printstatus('Error:', error=ex)
         return 1
 
-    printdebug(text='Todo Items after this run:', data=todolist)
+    # printdebug(text='Todo Items after this run:', data=todolist)
     return retvalue
 
 # Functions -------------------------------------------------------
@@ -235,7 +240,7 @@ def build_actions(argdict):
             'kwargs': {
                 'key': userkey,
                 'adding': argdict['--add'],
-                'important': True
+                'important': True,
             },
         },
         '--json': {
@@ -295,7 +300,10 @@ def build_actions(argdict):
         '--unimportant': {
             'function': do_mark_important,
             'args': [useritem],
-            'kwargs': {'key': userkey, 'important': False},
+            'kwargs': {
+                'key': userkey,
+                'important': False,
+            },
         },
         '--up': {
             'function': do_move_item,
@@ -353,6 +361,77 @@ def confirm(question, header=None, warn=None, forceanswer=False):
         ans = input(question).lower()
 
     return (ans[0] == 'y') if ans else False
+
+
+def debug(*args, **kwargs):
+    """ Print a message only if DEBUG is truthy. """
+    if not (DEBUG and args):
+        return None
+
+    # Use stderr by default.
+    if kwargs.get('file', None) is None:
+        kwargs['file'] = sys.stderr
+
+    # Include parent class name when given.
+    parent = kwargs.get('parent', None)
+    with suppress(KeyError):
+        kwargs.pop('parent')
+
+    # Go back more than once when given.
+    backlevel = kwargs.get('back', 1)
+    with suppress(KeyError):
+        kwargs.pop('back')
+
+    frame = inspect.currentframe()
+    # Go back a number of frames (usually 1).
+    while backlevel > 0:
+        if frame is None:
+            raise ValueError('`level` is too large, there is no frame.')
+        frame = frame.f_back
+        backlevel -= 1
+    if frame is None:
+        raise ValueError('`level` is too large, there is no frame.')
+    fname = os.path.split(frame.f_code.co_filename)[-1]
+    lineno = frame.f_lineno
+    if parent:
+        func = '{}.{}'.format(parent.__class__.__name__, frame.f_code.co_name)
+    else:
+        func = frame.f_code.co_name
+
+    # Use the colorized lineinfo for printing.
+    lineinfo = C('{}:{} {}: '.format(
+        C(fname, 'yellow'),
+        C(str(lineno).rjust(5), 'blue'),
+        C().join(C(func, 'magenta'), '()').rjust(25)
+    ))
+
+    # Are we omitting the line info, and just aligning with the end of it?
+    align = kwargs.get('align', False)
+    with suppress(KeyError):
+        kwargs.pop('align')
+
+    # An editable arg list, for patching.
+    pargs = list(C(a, 'green').str() for a in args)
+
+    # Is this a continuation from a previous line?
+    # Getting this for debug(), re-setting for print().
+    kwargs['end'] = kwargs.get('end', '\n')
+    willcontinue = (not kwargs['end'].endswith('\n'))
+    continued = debug.continued.get(kwargs['file'], False)
+    if align or continued:
+        debug.continued[kwargs['file']] = willcontinue
+        if align:
+            pargs[0] = ''.join((' ' * len(lineinfo.stripped()), pargs[0]))
+        print(*pargs, **kwargs)
+        return None
+    debug.continued[kwargs['file']] = willcontinue
+
+    # Patch args to stay compatible with print().
+    pargs[0] = ''.join((str(lineinfo), pargs[0]))
+    print(*pargs, **kwargs)
+# This dict tracks whether line info should be included, based on whether
+# the last line's `end` had a newline in it, per file descriptor.
+debug.continued = {}
 
 
 def do_add(text, key=None, important=False):
@@ -447,7 +526,7 @@ def do_listkey(key=None, preview=False):
         return 1
 
     if todokey:
-        keystr = todokey.preview_str() if preview else todokey.to_str()
+        keystr = todokey.preview_str() if preview else str(todokey)
         print('    {}'.format(keystr.replace('\n', '\n    ')))
     else:
         print('    {}'.format(str(todokey)))
@@ -463,22 +542,58 @@ def do_mark_important(query, key=None, adding=False, important=True):
         this function and does 'do_add' instead. It is because of the way
         arguments are handled (the way functions are fired off.)
     """
+    printdebug('Marking important={}: {}, key={}'.format(
+        important,
+        query,
+        key,
+    ))
+    todokey = todolist.get_key(key, default=None)
+    if todokey is None:
+        printdebug('Looking for item to mark important={}: {}'.format(
+            important,
+            key,
+        ))
+        # User has passed only an item's text. We have to find the key.
+        items = todolist.find_item(key)
+        if not items:
+            printstatus('Cannot find that item: {}'.format(key), error=True)
+            return 1
+        # TODO: this is very inefficient.
+        errs = 0
+        for foundkey, _, item in items:
+            if adding:
+                errs += do_add(item.text, key=foundkey, important=important)
+            else:
+                errs += do_mark_important(
+                    item.text,
+                    key=foundkey,
+                    important=important
+                )
+        return errs
+
+    # We have a key, or both a key and an item.
     if adding:
         return do_add(query, key=key, important=important)
 
+    # We should have a useable key name after this, or else everything fails.
     todokey = get_key(key or TodoKey.null)
     if todokey is None:
         return 1
 
-    index, item = todokey.find_item(query)
-    if (index is None) or (item is None):
-        printstatus('Unable to find that item:', item=query, error=True)
-        return 1
-
-    item.important = important
     importantstr = 'important' if important else 'unimportant'
     msg = 'Marked as {}:'.format(importantstr)
-    printstatus(msg, key=todokey, index=index, item=item)
+
+    if not query:
+        # No query, we are marking a key as important.
+        todokey.important = important
+        printstatus(msg, key=todokey)
+    else:
+        index, item = todokey.find_item(query)
+        if (index is None) or (item is None):
+            printstatus('Unable to find that item:', item=query, error=True)
+            return 1
+        item.important = important
+        printstatus(msg, key=todokey, index=index, item=item)
     return do_save()
 
 
@@ -752,6 +867,7 @@ def get_key(keyname=None):
     """
     # A TodoKey may have been passed to another command like do_listkey..
     if isinstance(keyname, TodoKey):
+        printdebug('Already a key: {}'.format(keyname.label))
         return keyname
 
     if keyname is None:
@@ -833,7 +949,7 @@ def printdebug(text=None, data=None):
     """ Debug printer. Prints simple text, or pretty prints dicts/lists. """
     if DEBUG:
         if text:
-            print(colordebug(text))
+            debug(text, back=2)
         if data:
             printobj(data)
 
@@ -990,16 +1106,16 @@ def printstatus(
 
 # Classes ---------------------------------------------------------
 
-def colordebug(s):
-    return color(text=s, fore='green')
-
-
 def colorindex(i):
     return color(text=str(i), fore='blue', style='bright')
 
 
 def colorimp(s):
     return color(text=str(s), fore='magenta', style='bright')
+
+
+def colorimpkey(s):
+    return color(text=s, fore='yellow', style='bright')
 
 
 def colorerr(s):
@@ -1151,6 +1267,7 @@ class TodoKey(UserList):
     # This is set to a default when TodoList.load_data() is finished.
     # The top key is used as the default when the list is not empty.
     null = 'No Label'
+    important_str = '*'
 
     class __NoLabel(object):  # noqa
 
@@ -1161,27 +1278,34 @@ class TodoKey(UserList):
         label = kwargs.get('label', TodoKey.__NoLabel())
         # Empty label values default to TodoKey.null.
         self.label = label if label else TodoKey.null
-        try:
+        with suppress(KeyError):
             # Label kwarg was given. Pop it so it doesn't interfere with
             # UserList.__init__()
             kwargs.pop('label')
-        except KeyError:
-            pass
+        self.important = kwargs.get('important', False)
+        with suppress(KeyError):
+            kwargs.pop('important')
+        if self.label.startswith(self.important_str):
+            self.important = True
+            self.label = self.label[len(self.important_str):]
 
         super().__init__(*args, **kwargs)
         # These will only print when running ./todo.py itself.
         # Otherwise, todo.DEBUG would have to be set.
         # So, by default nothing is ever printed from these classes.
-        printdebug('TodoKey(label=\'{}\')'.format(self.label))
+        printdebug('TodoKey(label=\'{}\'), important='.format(
+            self.label,
+            self.important
+        ))
 
     def __bool__(self):
         return bool(self.data)
 
     def __repr__(self):
-        return self.to_str()
+        return self.to_str(usetextmarker=True)
 
     def __str__(self):
-        return self.__repr__()
+        return self.to_str(color=True)
 
     def add_item(self, item, important=False):
         """ Add an item to this key. """
@@ -1199,6 +1323,7 @@ class TodoKey(UserList):
             Otherwise, return (None, None)
             * Indexes are zero-based.
         """
+        printdebug('Finding item: {!r}'.format(query))
         intval, querypat = TodoKey.parse_query(query)
         for index, item in enumerate(self.data):
             if (intval is not None) and (intval == index):
@@ -1216,6 +1341,16 @@ class TodoKey(UserList):
             TodoKey.get_count() actually does the same as len(TodoKey).
         """
         return len(self.data)
+
+    def get_label(self, color=False, usetextmarker=False):
+        """ Retrieve the formatted label for this key. """
+        lbl = self.label
+        if usetextmarker and self.important:
+            lbl = ''.join((self.important_str, lbl))
+
+        if color:
+            return colorimpkey(lbl) if self.important else colorkey(lbl)
+        return lbl
 
     def move_item(self, query, newindex):
         """ Move an item from one position to another.
@@ -1277,7 +1412,7 @@ class TodoKey(UserList):
 
     def preview_str(self):
         """ A short preview list of this key's items. """
-        return self.to_str(max_items=2)
+        return self.to_str(max_items=2, color=True)
 
     def remove_item(self, query):
         """ Removes an item from this key. The query can be the index,
@@ -1345,24 +1480,36 @@ class TodoKey(UserList):
     def to_json_obj(self):
         """ Turn this key into a JSON-friendly dict object. """
         # Convert TodoItems() to str for JSON, and add key name.
+        printdebug(
+            'Converting key to JSON: {}'.format(
+                self.get_label(color=True, usertextmarker=True)
+            )
+        )
         return {
-            self.label: {
+            self.get_label(usetextmarker=True): {
                 i: itm.to_json() for i, itm in self.to_dict().items()
             }
         }
 
-    def to_str(self, max_items=None):
+    def to_str(self, max_items=None, color=False, usetextmarker=False):
         """ Return a string representation of this key, optionally cutting
             the list off at `max_items`.
         """
-        lines = ['{}:'.format(colorkey(self.label))]
+        lbl = self.get_label(color=color, usetextmarker=usetextmarker)
+        lines = [
+            '{}:'.format(lbl)
+        ]
         for index, item in enumerate(self.data):
             if max_items and index == max_items:
                 break
-            lines.append('    {}: {}'.format(index, str(item)))
+            lines.append('    {}: {}'.format(
+                index,
+                item.to_str(color=color, usetextmarker=usetextmarker)
+            ))
         else:
             # The entire list was built.
             return '\n'.join(lines)
+        # The list was cut short.
         if self.data:
             lines.append(
                 '       (plus {} more...)'.format(len(self) - max_items)
@@ -1430,6 +1577,30 @@ class TodoList(UserDict):
         # Save the new items to this key.
         self.data[key] = existing
         return (existing, newitem)
+
+    def backup_file(self, filename=None):
+        """ Backup existing todo.lst. """
+        filename = filename or self.filename
+        if not filename:
+            raise ValueError('No file name is set.')
+        if not os.path.exists(filename):
+            printdebug('Cannot backup nonexistant file: {}'.format(filename))
+            return False
+
+        backupname = '{}~'.format(filename)
+        if os.path.exists(backupname):
+            printdebug('Overwriting backup file: {}'.format(filename))
+
+        try:
+            shutil.copyfile(filename, backupname)
+        except EnvironmentError as ex:
+            printdebug('Failed to copy backupfile: {} -> {} ({})'.format(
+                filename,
+                backupname,
+                ex
+            ))
+            return False
+        return True
 
     def clear(self):
         """ Clears all items without warning. """
@@ -1521,7 +1692,7 @@ class TodoList(UserDict):
 
     def load_data(self, data, append=False):
         """ Load items from a dict. """
-        printdebug('Loading data:', data=data)
+        # printdebug('Loading data:', data=data)
         if not data:
             # No data passed in!
             self.data = {}
@@ -1537,7 +1708,7 @@ class TodoList(UserDict):
             elif isinstance(keyitems, list):
                 for text in keyitems:
                     todokey.add_item(item=text)
-            self.data[keyname] = todokey
+            self.data[todokey.get_label()] = todokey
 
         # Set the default key to the first key found, if there is data
         # available.
@@ -1652,6 +1823,8 @@ class TodoList(UserDict):
 
         # make json string.
         jsondata = self.to_json()
+        # Backup any existing todo.lst.
+        self.backup_file(filename=filename)
 
         # write to file.
         try:
@@ -1684,19 +1857,20 @@ class TodoList(UserDict):
     def to_json(self, usedict=False):
         """ Return the json string for this todo list. """
         d = {}
-        for keyname, todokey in self.data.items():
+        for todokey in self.data.values():
             # Keys can be represented as dicts or lists.
-            d[keyname] = {} if usedict else []
+            jsonkey = todokey.get_label(color=False, usetextmarker=True)
+            d[jsonkey] = {} if usedict else []
             if usedict:
                 # Use the old dict format for items.
                 for index, item in todokey.to_dict().items():
                     itemtext = item.to_str(color=False, usetextmarker=True)
-                    d[keyname][index] = itemtext
+                    d[jsonkey][index] = itemtext
             else:
                 # Use a simple list for items.
                 for item in todokey.data:
                     itemtext = item.to_str(color=False, usetextmarker=True)
-                    d[keyname].append(itemtext)
+                    d[jsonkey].append(itemtext)
 
         try:
             jsondata = json.dumps(d, indent=4, sort_keys=True)
