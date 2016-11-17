@@ -41,7 +41,7 @@ except ImportError as ex:
     sys.exit(1)
 
 NAME = 'Todo'
-VERSION = '2.3.2'
+VERSION = '2.3.3'
 VERSIONSTR = '{} v. {}'.format(NAME, VERSION)
 SCRIPT = os.path.split(os.path.abspath(sys.argv[0]))[1]
 SCRIPTDIR = os.path.abspath(sys.path[0])
@@ -365,7 +365,13 @@ def do_add(text, key=None, important=False):
         important,
         text))
     key, newitem = todolist.add_item(text, key=key, important=important)
-    printstatus('Added item:', key=key, item=newitem)
+    # Todo lists are zero-based.
+    printstatus(
+        'Added item:',
+        key=key,
+        item=newitem,
+        index=len(key) - 1,
+    )
     return do_save()
 
 
@@ -586,7 +592,7 @@ def do_remove(query, key=None, confirmation=True):
         if removed is None:
             printstatus('Could not find:', key=key, item=query)
             return 1
-        printstatus('Removed:', key=key, item=removed)
+        printstatus('Removed:', key=key, item=removed, index=index)
         # Offer to delete the key if it is empty.
         if not check_empty_key(key, silentsave=True):
             printdebug('Key still has items: {}'.format(key.label))
