@@ -16,6 +16,7 @@ import sys
 from collections import namedtuple, UserDict, UserList
 from contextlib import suppress
 
+# Creates a friendlier message when third-party imports fail.
 bad_import_msg = '\n'.join((
     'Error: {err}',
     'You may need to install {name} with pip: pip install {package}'
@@ -28,13 +29,9 @@ try:
         color,
         Colr as C,
     )
+    from colr.colr_docopt import docopt
 except ImportError as ex:
     print(bad_import_msg(err=ex, name='Colr', package='colr'))
-    sys.exit(1)
-try:
-    import docopt
-except ImportError as ex:
-    print(bad_import_msg(err=ex, name='Docopt', package='docopt'))
     sys.exit(1)
 
 NAME = 'Todo'
@@ -1159,73 +1156,6 @@ def colorval(s):
     return color(text=s, fore='green')
 
 
-class ColorDocoptExit(SystemExit):
-
-    """ Custom DocoptExit class, colorizes the help text. """
-
-    usage = ''
-
-    def __init__(self, message=''):
-        usagestr = '{}\n{}'.format(message,
-                                   coloredhelp(self.usage)).strip()
-        SystemExit.__init__(self, usagestr)
-
-
-def coloredhelp(s):
-    """ Colorize the usage string for docopt
-        (ColorDocoptExit, docoptextras)
-    """
-    newlines = []
-    bigindent = (' ' * 16)
-    for line in s.split('\n'):
-        linestrip = line.strip()
-        if linestrip.strip(':') in ('Usage', 'Options'):
-            # label
-            line = color(line, fore='reset', style='bold')
-        elif (':' in line) and (not line.startswith(bigindent)):
-            # opt,desc line. colorize it.
-            lineparts = line.split(':')
-            opt = lineparts[0]
-            val = lineparts[1] if len(lineparts) == 2 else lineparts[1:]
-
-            # colorize opt
-            if ',' in opt:
-                opts = opt.split(',')
-            else:
-                opts = [opt]
-            optstr = ','.join([color(o, fore='blue') for o in opts])
-
-            # colorize desc
-            valstr = color(val, fore='green')
-            line = ':'.join([optstr, valstr])
-        elif line.startswith(bigindent) and (not linestrip.startswith('[')):
-            # continued desc string..
-            line = color(line, fore='green')
-        elif (not line.startswith('    ')):
-            # header line.
-            line = color(line, fore='red', style='bold')
-        else:
-            # everything else, usage mainly.
-            line = line.replace(SCRIPT, color(SCRIPT, fore='green'))
-
-        newlines.append(line)
-    return '\n'.join(newlines)
-
-
-def docoptextras(helpstr, version, options, doc):
-    if (helpstr and
-            any((o.name in ('-h', '--help')) and o.value for o in options)):
-        print(coloredhelp(doc).strip("\n"))
-        sys.exit()
-    if version and any(o.name == '--version' and o.value for o in options):
-        print(color(version, fore='blue'))
-        sys.exit()
-
-# Override default docopt stuff
-docopt.DocoptExit = ColorDocoptExit
-docopt.extras = docoptextras
-
-
 class TodoItem(object):
 
     """ A single item in the todo list.
@@ -1999,5 +1929,5 @@ if __name__ == '__main__':
     # Disable colors when piping output.
     colr_auto_disable()
 
-    mainret = main(docopt.docopt(USAGESTR, version=VERSIONSTR))
+    mainret = main(docopt(USAGESTR, version=VERSIONSTR, script=SCRIPT))
     sys.exit(mainret)
