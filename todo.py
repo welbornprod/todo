@@ -5,12 +5,6 @@
     ...A revamp of my quick and dirty todo list app.
     -Christopher Welborn 07-21-2014
 """
-# TODO: New remove/move operations should work on multiple key items.
-#       Right now they only work on 1 item per key, because of
-#       TodoKey.find_item()
-
-# TODO: A namedtuple() may help with readability for the find_* returns.
-#       A dict may also help with parsing and operating on the results.
 
 import inspect
 import functools
@@ -19,7 +13,7 @@ import os
 import re
 import shutil
 import sys
-from collections import UserDict, UserList
+from collections import namedtuple, UserDict, UserList
 from contextlib import suppress
 
 bad_import_msg = '\n'.join((
@@ -44,7 +38,7 @@ except ImportError as ex:
     sys.exit(1)
 
 NAME = 'Todo'
-VERSION = '2.3.4'
+VERSION = '2.3.5'
 VERSIONSTR = '{} v. {}'.format(NAME, VERSION)
 SCRIPT = os.path.split(os.path.abspath(sys.argv[0]))[1]
 SCRIPTDIR = os.path.abspath(sys.path[0])
@@ -560,13 +554,17 @@ def do_mark_important(query, key=None, adding=False, important=True):
             return 1
         # TODO: this is very inefficient.
         errs = 0
-        for foundkey, _, item in items:
+        for listresult in items:
             if adding:
-                errs += do_add(item.text, key=foundkey, important=important)
+                errs += do_add(
+                    listresult.item.text,
+                    key=listresult.key,
+                    important=important
+                )
             else:
                 errs += do_mark_important(
-                    item.text,
-                    key=foundkey,
+                    listresult.item.text,
+                    key=listresult.key,
                     important=important
                 )
         return errs
@@ -588,12 +586,17 @@ def do_mark_important(query, key=None, adding=False, important=True):
         todokey.important = important
         printstatus(msg, key=todokey)
     else:
-        index, item = todokey.find_item(query)
-        if (index is None) or (item is None):
+        keyresult = todokey.find_item(query)
+        if not keyresult:
             printstatus('Unable to find that item:', item=query, error=True)
             return 1
-        item.important = important
-        printstatus(msg, key=todokey, index=index, item=item)
+        keyresult.item.important = important
+        printstatus(
+            msg,
+            key=todokey,
+            index=keyresult.index,
+            item=keyresult.item
+        )
     return do_save()
 
 
@@ -616,14 +619,14 @@ def do_move_item(query, newindex, key=None):
         'd': lambda i: (i + 1) if (i < maxlength) else maxlength,
     }
     # Make sure the item exists, we may need its index anyway.
-    foundindex, founditem = todokey.find_item(query)
-    if (founditem is None) or (foundindex is None):
+    keyresult = todokey.find_item(query)
+    if not keyresult:
         printstatus('Unable to find that item:', item=query)
         return 1
 
     if newindex.lower()[0] in position_mod:
         # Modify the new index using shortcuts 'top', 'bottom', 'up', 'down'.
-        newindex = position_mod[newindex.lower()[0]](foundindex)
+        newindex = position_mod[newindex.lower()[0]](keyresult.index)
     else:
         # Set the index the user wants.
         try:
@@ -631,45 +634,59 @@ def do_move_item(query, newindex, key=None):
         except (TypeError, ValueError):
             printstatus('Invalid new position:', index=newindex)
 
-    indexstr = '{} -> {}'.format(foundindex, newindex)
+    indexstr = '{} -> {}'.format(keyresult.index, newindex)
     errmsg = 'Unable to move item:'
     try:
-        movediteminfo = todolist.move_item(query, newindex, key=key)
-    except TodoList.BadIndexError as exindex:
-        printstatus(errmsg, index=indexstr, item=founditem, error=exindex)
+        move = todolist.move_item(query, newindex, key=key)
+    except (TodoList.BadIndexError, TodoList.BadKeyError) as exindex:
+        printstatus(
+            errmsg,
+            index=indexstr,
+            item=keyresult.item,
+            error=exindex,
+        )
         return 1
 
-    tdkey, oindex, nindex, item = movediteminfo
-    if nindex is None:
-        printstatus(errmsg, key=key, index=indexstr, item=founditem)
+    if not move:
+        printstatus(errmsg, key=key, index=indexstr, item=move.item)
         return 1
 
     # okay.
-    printstatus('Moved:', key=key, index=indexstr, item=founditem)
+    printstatus('Moved:', key=key, index=indexstr, item=move.item)
     return do_save()
 
 
 def do_move_tokey(query, newkey, key=None):
     """ Move an item from one key to another, or to a new key. """
-    found = todolist.find_item(query, key=key)
-    if not found:
+    items = todolist.find_item(query, key=key)
+    if not items:
         printstatus('Unable to find that item:', item=query)
         return 1
     errs = 0
-    for todokey, index, item in found:
-        oldkey, movedkey, item = todolist.move_item_tokey(
-            index,
-            newkey,
-            key=todokey)
-        keystr = '{} -> {}'.format(todokey.label, newkey)
-        if (oldkey is None) and (newkey is None) and (item is None):
+    for listresult in items:
+        try:
+            move = todolist.move_item_tokey(
+                listresult.index,
+                newkey,
+                key=listresult.key)
+        except TodoList.BadKeyError as ex:
+            printstatus(
+                'Unable to move item from {} to {}.'.format(
+                    listresult.key.label,
+                    newkey,
+                ),
+                error=ex
+            )
+            return 1
+        keystr = '{} -> {}'.format(listresult.key.label, newkey)
+        if move:
+            printstatus('Move item:', key=keystr, item=move.item)
+        else:
             printstatus('Unable to do move:', key=keystr, item=query)
             errs += 1
-        else:
-            printstatus('Move item:', key=keystr, item=item)
 
-        if not check_empty_key(oldkey, silentsave=True):
-            printdebug('Key still has items: {}'.format(oldkey.label))
+        if not check_empty_key(listresult.key, silentsave=True):
+            printdebug('Key still has items: {}'.format(listresult.key.label))
 
     return do_save()
 
@@ -702,15 +719,20 @@ def do_remove(query, key=None, confirmation=True):
             printstatus('User Cancelled', error=True)
             return 1
 
-    for key, index, item in items:
-        removed = key.remove_item(index)
+    for listresult in items:
+        removed = listresult.key.remove_item(index)
         if removed is None:
-            printstatus('Could not find:', key=key, item=query)
+            printstatus('Could not find:', key=listresult.key, item=query)
             return 1
-        printstatus('Removed:', key=key, item=removed, index=index)
+        printstatus(
+            'Removed:',
+            key=listresult.key,
+            item=removed,
+            index=listresult.index
+        )
         # Offer to delete the key if it is empty.
-        if not check_empty_key(key, silentsave=True):
-            printdebug('Key still has items: {}'.format(key.label))
+        if not check_empty_key(listresult.key, silentsave=True):
+            printdebug('Key still has items: {}'.format(listresult.key.label))
 
     return do_save()
 
@@ -943,6 +965,13 @@ def merge_json(dictobj, filename):
         return False
 
     return True
+
+
+def no_nones(iterable):
+    """ Returns True if an iterable does not contain a None element.
+        This is used for TodoListResult.__bool__, TodoKeyResult.__bool__, etc.
+    """
+    return all((element is not None) for element in iterable)
 
 
 def printdebug(text=None, data=None):
@@ -1269,15 +1298,17 @@ class TodoKey(UserList):
     null = 'No Label'
     important_str = '*'
 
-    class __NoLabel(object):  # noqa
-
-        def __bool__(self):
-            return False
+    # Returned from a move_item operation.
+    TodoKeyMove = namedtuple('TodoKeyMove', ('index', 'newindex', 'item'))
+    TodoKeyMove.__bool__ = no_nones
+    # Returned in a list from the find_item() method.
+    TodoKeyResult = namedtuple('TodoKeyResult', ('index', 'item'))
+    TodoKeyResult.__bool__ = no_nones
 
     def __init__(self, *args, **kwargs):
-        label = kwargs.get('label', TodoKey.__NoLabel())
+        label = kwargs.get('label', None)
         # Empty label values default to TodoKey.null.
-        self.label = label if label else TodoKey.null
+        self.label = label or self.null
         with suppress(KeyError):
             # Label kwarg was given. Pop it so it doesn't interfere with
             # UserList.__init__()
@@ -1301,6 +1332,30 @@ class TodoKey(UserList):
     def __bool__(self):
         return bool(self.data)
 
+    def __eq__(self, other):
+        """ TodoKeys are equal if they have the same label, and all the items
+            are the same.
+        """
+        try:
+            otherlbl = other.label
+        except AttributeError:
+            raise TypeError(
+                'Expecting a TodoKey with a label, got: {}'.format(
+                    other.__class__.__name__
+                ))
+        if otherlbl != self.label:
+            return False
+        try:
+            otherdata = other.data
+        except AttributeError:
+            raise TypeError(
+                'Expecting a TodoKey with a data attribute, got: {}'.format(
+                    other.__class__.__name__
+                )
+            )
+        # Same label, same data.
+        return otherdata == self.data
+
     def __repr__(self):
         return self.to_str(usetextmarker=True)
 
@@ -1323,15 +1378,15 @@ class TodoKey(UserList):
             Otherwise, return (None, None)
             * Indexes are zero-based.
         """
-        printdebug('Finding item: {!r}'.format(query))
-        intval, querypat = TodoKey.parse_query(query)
+        printdebug('Finding item in {}: {!r}'.format(self.label, query))
+        intval, querypat = self.parse_query(query)
         for index, item in enumerate(self.data):
             if (intval is not None) and (intval == index):
-                return index, item
+                return self.TodoKeyResult(index, item)
             itemtext = item.to_str(color=False)
             if (querypat is not None) and querypat.search(itemtext):
-                return index, item
-        return (None, None)
+                return self.TodoKeyResult(index, item)
+        return self.TodoKeyResult(None, None)
 
     def get_count(self):
         """ Wrapper for len(self.data) or len(self).
@@ -1361,24 +1416,25 @@ class TodoKey(UserList):
             Returns (None, None, None) on failure.
             Possibly raises TodoList.BadIndexError or TodoList.SameIndexError.
         """
-        index, item = self.find_item(query)
-        if index is None:
-            return (None, None, None)
+        keyresult = self.find_item(query)
+        if not keyresult:
+            printdebug('Falsey key result: {}'.format(keyresult))
+            return self.TodoKeyMove(None, None, None)
 
         try:
             newindex = int(newindex)
         except (TypeError, ValueError) as exint:
-            raise TodoList.BadIndexError(str(exint)) from exint
+            raise self.BadIndexError(str(exint)) from exint
 
         maxlength = self.get_count() - 1
-        if newindex == index:
-            raise TodoList.SameIndexError('Indexes cannot be the same.')
+        if newindex == keyresult.index:
+            raise self.SameIndexError('Indexes cannot be the same.')
         elif (0 > newindex) or (newindex > maxlength):
-            raise TodoList.BadIndexError('Index must be within the bounds.')
+            raise self.BadIndexError('Index must be within the bounds.')
 
         try:
             # Remove the item, and reinsert it into the new index.
-            removed = self.data.pop(index)
+            removed = self.data.pop(keyresult.index)
             self.data.insert(newindex, removed)
         except Exception as ex:
             # Format all lowercase error messages ('list index out of range')
@@ -1387,7 +1443,7 @@ class TodoKey(UserList):
                 errmsg = '{}.'.format(errmsg)
             raise TodoList.BadIndexError(errmsg) from ex
 
-        return (index, newindex, item)
+        return self.TodoKeyMove(keyresult.index, newindex, keyresult.item)
 
     @classmethod
     def parse_query(cls, query):
@@ -1396,7 +1452,7 @@ class TodoKey(UserList):
             or on error, raises TodoList.BadQueryError().
         """
         if (query is None) or (query == ''):
-            raise TodoList.BadQueryError('Empty query!')
+            raise self.BadQueryError('Empty query!')
 
         try:
             intval = int(query)
@@ -1407,7 +1463,7 @@ class TodoKey(UserList):
                 querypat = re.compile(query, re.IGNORECASE)
             except (re.error, TypeError) as exreg:
                 errmsg = 'Invalid query: {}\n{}'.format(query, exreg)
-                raise TodoList.BadQueryError(errmsg)
+                raise self.BadQueryError(errmsg)
         return intval, querypat
 
     def preview_str(self):
@@ -1419,10 +1475,13 @@ class TodoKey(UserList):
             or a regex pattern/text to match.
             Returns the removed TodoItem, or None (if not found).
         """
-        matchindex, matchitem = self.find_item(query)
+        keyresult = self.find_item(query)
         removed = None
-        if (matchindex is not None) and (matchitem is not None):
-            removed = self.data.pop(matchindex)
+        if keyresult:
+            removed = self.data.pop(keyresult.index)
+        else:
+            printdebug('Falsey key result: {}'.format(keyresult))
+
         return removed
 
     def remove_items(self, query):
@@ -1444,19 +1503,20 @@ class TodoKey(UserList):
             If no matches are found, returns [].
         """
         if firstonly:
-            firstindex, firstmatch = self.find_item(query)
-            if (firstindex is not None) and (firstmatch is not None):
-                return [(firstindex, firstmatch)]
+            keyresult = self.find_item(query)
+            if keyresult:
+                return [keyresult]
+            printdebug('Falsey key result: {}'.format(keyresult))
             return []
         # Find multiple matches.
-        intval, querypat = TodoKey.parse_query(query)
+        intval, querypat = self.parse_query(query)
         found = []
         for index, item in enumerate(self.data):
             itemtext = item.to_str(color=False)
             if (intval is not None) and (intval == index):
-                found.append((index, item))
+                found.append(self.TodoKeyResult(index, item))
             elif (querypat is not None) and querypat.search(itemtext):
-                found.append((index, item))
+                found.append(self.TodoKeyResult(index, item))
 
         return found
 
@@ -1474,7 +1534,7 @@ class TodoKey(UserList):
                 indent=4)
         except ValueError:
             errmsg = 'Unable to translate key to JSON: {}'.format(self.label)
-            raise TodoList.ParseError(errmsg)
+            raise self.ParseError(errmsg)
         return jsondata
 
     def to_json_obj(self):
@@ -1527,25 +1587,43 @@ class TodoList(UserDict):
         pass
 
     class BadKeyError(KeyError):
+        def __str__(self):
+            # Don't quote the individual args.
+            return ' '.join(str(s) for s in self.args)
+
+    class BadQueryError(ValueError):
         pass
 
-    class BadQueryError(Exception):
+    class LoadError(EnvironmentError):
         pass
 
-    class LoadError(Exception):
+    class NoFileExists(EnvironmentError):
         pass
 
-    class NoFileExists(Exception):
-        pass
-
-    class ParseError(Exception):
+    class ParseError(ValueError):
         pass
 
     class SameIndexError(BadIndexError):
         pass
 
-    class SaveError(Exception):
+    class SaveError(EnvironmentError):
         pass
+
+    # Returned from a move_item operation.
+    TodoListMove = namedtuple(
+        'TodoListMove',
+        ('key', 'index', 'newindex', 'item')
+    )
+    TodoListMove.__bool__ =  no_nones
+    # Returned from a move_item_tokey operation.
+    TodoListMoveToKey = namedtuple(
+        'TodoListMoveToKey',
+        ('key', 'newkey', 'item')
+    )
+    TodoListMoveToKey.__bool__ = no_nones
+    # Returned from the find_item() method, in a list.
+    TodoListResult = namedtuple('TodoListResult', ('key', 'index', 'item'))
+    TodoListResult.__bool__ = no_nones
 
     def __init__(self, *args, **kwargs):
         filename = kwargs.get('filename', None)
@@ -1567,7 +1645,7 @@ class TodoList(UserDict):
             Returns (TodoKey, TodoItem) on success.
         """
         if not text:
-            raise TodoList.AddError('No item to add.')
+            raise self.AddError('No item to add.')
         key = key if key is not None else TodoKey.null
         printdebug('TodoList.add_item(\'{}\', key=\'{}\')'.format(text, key))
         # Find the existing key, or create a new one.
@@ -1619,33 +1697,46 @@ class TodoList(UserDict):
             del self.data[key]
         except (TypeError, KeyError) as ex:
             errmsg = 'Unable to remove key: {}\n{}'.format(key, ex)
-            raise TodoList.BadKeyError(errmsg)
+            raise self.BadKeyError(errmsg)
         return True
 
     def find_item(self, query, key=None):
         """ Finds a specific item in the list.
             The query can be a regex pattern (str), or an index.
             If 'key' is not set, TodoKey.null is used.
-            Returns a list [(TodoKey(), Index, TodoItem()] on success.
+            Returns a list [(TodoKey(), Index, TodoItem()), ...] on success.
             Returns [] if no result is found.
         """
         if key:
-            printdebug('Searching key: {}'.format(key))
+            printdebug('Finding item in key: {}'.format(key))
             todokey = self.get_key(key, None)
             if todokey is None:
                 return []
 
-            index, item = todokey.find_item(query)
-            if (index is not None) and item:
-                return [(todokey, index, item)]
+            keyresult = todokey.find_item(query)
+            if keyresult:
+                return [
+                    self.TodoListResult(
+                        todokey,
+                        keyresult.index,
+                        keyresult.item
+                    )
+                ]
+            printdebug('Falsey key result: {}'.format(keyresult))
             return []
 
-        printdebug('Searching all keys...')
+        printdebug('Finding item in any key.')
         found = []
         for todokey in self.todokeys():
-            index, item = todokey.find_item(query)
-            if (index is not None) and item:
-                found.append((todokey, index, item))
+            keyresult = todokey.find_item(query)
+            if keyresult:
+                found.append(
+                    self.TodoListResult(
+                        todokey,
+                        keyresult.index,
+                        keyresult.item
+                    )
+                )
         return found
 
     def get_count(self):
@@ -1724,18 +1815,18 @@ class TodoList(UserDict):
         if not filename:
             filename = self.filename
         if not filename:
-            raise TodoList.LoadError('No filename provided.')
+            raise self.LoadError('No filename provided.')
 
         if not os.path.exists(filename):
             errmsg = 'File doesn\'t exist: {}'.format(filename)
-            raise TodoList.NoFileExists(errmsg)
+            raise self.NoFileExists(errmsg)
 
         try:
             with open(filename, 'r') as f:
                 rawdata = f.read()
         except EnvironmentError as exread:
             errmsg = 'Unable to read: {}'.format(filename)
-            raise TodoList.LoadError(errmsg) from exread
+            raise self.LoadError(errmsg) from exread
 
         if not rawdata.strip():
             # Empty file.
@@ -1745,7 +1836,7 @@ class TodoList(UserDict):
             jsonobj = json.loads(rawdata)
         except (TypeError, ValueError) as exparse:
             errmsg = 'Unable to parse JSON from: {}'.format(filename)
-            raise TodoList.ParseError(errmsg) from exparse
+            raise self.ParseError(errmsg) from exparse
 
         if isinstance(jsonobj, list):
             # Convert old todo data to new format.
@@ -1765,10 +1856,15 @@ class TodoList(UserDict):
         key = key if key is not None else TodoKey.null
         todokey = self.get_key(key, None)
         if todokey is None:
-            return (None, None, None, None)
+            return self.TodoListMove(None, None, None, None)
 
-        oldindex, newindex, item = todokey.move_item(query, newindex)
-        return (todokey, oldindex, newindex, item)
+        move = todokey.move_item(query, newindex)
+        return self.TodoListMove(
+            todokey,
+            move.index,
+            move.newindex,
+            move.item
+        )
 
     def move_item_tokey(self, query, newkey, key=None):
         """ Moves an item from one group to another.
@@ -1778,7 +1874,20 @@ class TodoList(UserDict):
         key = key if key is not None else TodoKey.null
         todokey = self.get_key(key, None)
         if todokey is None:
-            return (None, None, None)
+            return self.TodoListMoveToKey(None, None, None)
+        if isinstance(newkey, str):
+            newkeylbl = newkey
+        elif isinstance(newkey, TodoKey):
+            newkeylbl = newkey.label
+        else:
+            raise TypeError(
+                '`newkey` must be a TodoKey or str, got: {}'.format(
+                    newkey.__class__.__name__
+                ))
+        if todokey.label == newkeylbl:
+            raise self.BadKeyError(
+                'Source key and destination key are the same.'
+            )
         printdebug('TodoList.move...key(\'{}\', \'{}\')'.format(
             query,
             newkey))
@@ -1788,7 +1897,7 @@ class TodoList(UserDict):
             return (None, None, None)
 
         newkey, newitem = self.add_item(removed, key=newkey)
-        return (todokey, newkey, newitem)
+        return self.TodoListMoveToKey(todokey, newkey, newitem)
 
     def remove_item(self, query, key=None):
         """ Remove an item from the todo list.
@@ -1819,7 +1928,7 @@ class TodoList(UserDict):
         if not filename:
             filename = self.filename
         if not filename:
-            raise TodoList.SaveError('No filename provided.')
+            raise self.SaveError('No filename provided.')
 
         # make json string.
         jsondata = self.to_json()
@@ -1832,7 +1941,7 @@ class TodoList(UserDict):
                 f.write(jsondata)
         except EnvironmentError as exwrite:
             errmsg = 'Unable to write to file: {}'.format(filename)
-            raise TodoList.SaveError(errmsg) from exwrite
+            raise self.SaveError(errmsg) from exwrite
         return self.get_count()
 
     def search_items(self, query, firstonly=False):
@@ -1878,7 +1987,7 @@ class TodoList(UserDict):
             errmsg = 'Unable to generate JSON from: {!r} \n{}'.format(
                 d,
                 exjson)
-            raise TodoList.ParseError(errmsg)
+            raise self.ParseError(errmsg)
         return jsondata
 
     def todokeys(self):
