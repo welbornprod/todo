@@ -35,7 +35,7 @@ except ImportError as ex:
     sys.exit(1)
 
 NAME = 'Todo'
-VERSION = '2.4.0'
+VERSION = '2.4.1'
 VERSIONSTR = '{} v. {}'.format(NAME, VERSION)
 SCRIPT = os.path.split(os.path.abspath(sys.argv[0]))[1]
 SCRIPTDIR = os.path.abspath(sys.path[0])
@@ -717,7 +717,7 @@ def do_remove(query, key=None, confirmation=True):
             return 1
 
     for listresult in items:
-        removed = listresult.key.remove_item(index)
+        removed = listresult.key.remove_item(listresult.index)
         if removed is None:
             printstatus('Could not find:', key=listresult.key, item=query)
             return 1
@@ -971,28 +971,27 @@ def no_nones(iterable):
     return all((element is not None) for element in iterable)
 
 
-def printdebug(text=None, data=None):
+def printdebug(text=None, data=None, **kwargs):
     """ Debug printer. Prints simple text, or pretty prints dicts/lists. """
     if DEBUG:
         if text:
-            debug(text, back=2)
+            debug(text, back=2, **kwargs)
         if data:
             printobj(data)
 
 
 def printdebug_header():
     """ Print some debug info about this Todo version, if DEBUG is truthy. """
+    printdebug('Using:')
     printdebug(
-        '\n'.join((
-            'Using:',
-            '      colr: {colr_ver}',
-            '    docopt: {docopt_ver}'
-            '    python: {py_ver}',
-        )).format(
-            colr_ver=colr_version,
-            docopt_ver=docopt.__version__,
-            py_ver='{v.major}.{v.minor}.{v.micro}'.format(v=sys.version_info)
-        )
+        'colr  : {}'.format(colr_version),
+        align=True
+    )
+    printdebug(
+        'python: {v.major}.{v.minor}.{v.micro}'.format(
+            v=sys.version_info
+        ),
+        align=True
     )
 
 
