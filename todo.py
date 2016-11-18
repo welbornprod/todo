@@ -35,7 +35,7 @@ except ImportError as ex:
     sys.exit(1)
 
 NAME = 'Todo'
-VERSION = '2.3.5'
+VERSION = '2.4.0'
 VERSIONSTR = '{} v. {}'.format(NAME, VERSION)
 SCRIPT = os.path.split(os.path.abspath(sys.argv[0]))[1]
 SCRIPTDIR = os.path.abspath(sys.path[0])
