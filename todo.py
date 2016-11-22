@@ -27,6 +27,7 @@ try:
         __version__ as colr_version,
         auto_disable as colr_auto_disable,
         color,
+        disabled as colr_disabled,
         Colr as C,
     )
     from colr.colr_docopt import docopt
@@ -35,7 +36,7 @@ except ImportError as ex:
     sys.exit(1)
 
 NAME = 'Todo'
-VERSION = '2.4.1'
+VERSION = '2.4.2'
 VERSIONSTR = '{} v. {}'.format(NAME, VERSION)
 SCRIPT = os.path.split(os.path.abspath(sys.argv[0]))[1]
 SCRIPTDIR = os.path.abspath(sys.path[0])
@@ -57,7 +58,7 @@ USAGESTR = """{versionstr}
         {script} -i (KEY | ITEM)            [-f filename] [-D]
         {script} -K KEY                     [-f filename] [-D]
         {script} -l [KEY]                   [-f filename] [-D]
-        {script} (-L | -P)                  [-f filename] [-D]
+        {script} (-k | -L | -P)             [-f filename] [-D]
         {script} -m KEY ITEM <new_key>      [-f filename] [-D]
         {script} -m ITEM <new_key>          [-f filename] [-D]
         {script} -n [KEY] <new_keyname>     [-f filename] [-D]
@@ -92,6 +93,7 @@ USAGESTR = """{versionstr}
         -i,--important         : Mark key/item as important (bold/red).
         -I,--unimportant       : Mark key/item as unimportant.
         -j,--json              : Show list, or a specific key in JSON format.
+        -k,--listkeys          : List key names only.
         -K,--removekey         : Remove a key/label. (includes all items)
         -l,--list              : List items from a certain key.
                                  Defaults to: (first key)
@@ -244,6 +246,9 @@ def build_actions(argdict):
         },
         '--listall': {
             'function': do_listall,
+        },
+        '--listkeys': {
+            'function': do_listkeys,
         },
         '--movetokey': {
             'function': do_move_tokey,
@@ -525,6 +530,31 @@ def do_listkey(key=None, preview=False):
             '        (no items in this key)',
             error=True,
             nobreak=True)
+    return 0
+
+
+def do_listkeys():
+    """ List key names only. """
+    keynames = todolist.keynames()
+    # If color is disabled, then use a text marker.
+    usemarker = colr_disabled()
+
+    if not keynames:
+        print_err('No keys to list.')
+        return 1
+    longestkeylen = len(max(keynames, key=len))
+    for keyname in keynames:
+        key = todolist[keyname]
+        # Wrap the name in a Colr() to ljust without escape codes.
+        namefmt = C(
+            key.get_label(color=not usemarker, usetextmarker=usemarker)
+        ).ljust(longestkeylen)
+        # Number of items.
+        lenfmt = C(
+            '{} items'.format(len(todolist[keyname])),
+            fore='blue',
+        ).join('[', ']')
+        print('{} {}'.format(namefmt, lenfmt))
     return 0
 
 
@@ -1331,7 +1361,6 @@ class TodoKey(UserList):
         lbl = self.label
         if usetextmarker and self.important:
             lbl = ''.join((self.important_str, lbl))
-
         if color:
             return colorimpkey(lbl) if self.important else colorkey(lbl)
         return lbl
