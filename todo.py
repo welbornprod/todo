@@ -36,7 +36,7 @@ except ImportError as ex:
     sys.exit(1)
 
 NAME = 'Todo'
-VERSION = '2.4.2'
+VERSION = '2.5.0'
 VERSIONSTR = '{} v. {}'.format(NAME, VERSION)
 SCRIPT = os.path.split(os.path.abspath(sys.argv[0]))[1]
 SCRIPTDIR = os.path.abspath(sys.path[0])
@@ -48,7 +48,7 @@ USAGESTR = """{versionstr}
              [-f filename] [-D]
         {script} [-a | -b | -d | -r | -R | -s | -t | -u] ITEM
              [-f filename] [-D]
-        {script} [-c] | ([-j] [KEY])        [-f filename] [-D]
+        {script} [-c] | [-i] | ([-j] [KEY]) [-f filename] [-D]
         {script} -a [-i] KEY ITEM           [-f filename] [-D]
         {script} -a [-i] ITEM               [-f filename] [-D]
         {script} -e FILE KEY                [-f filename] [-D]
@@ -57,8 +57,8 @@ USAGESTR = """{versionstr}
         {script} -i KEY [ITEM]              [-f filename] [-D]
         {script} -i (KEY | ITEM)            [-f filename] [-D]
         {script} -K KEY                     [-f filename] [-D]
-        {script} -l [KEY]                   [-f filename] [-D]
-        {script} (-k | -L | -P)             [-f filename] [-D]
+        {script} -l [-i] [KEY]              [-f filename] [-D]
+        {script} (-k | -L | -P) [-i]        [-f filename] [-D]
         {script} -m KEY ITEM <new_key>      [-f filename] [-D]
         {script} -m ITEM <new_key>          [-f filename] [-D]
         {script} -n [KEY] <new_keyname>     [-f filename] [-D]
@@ -91,6 +91,7 @@ USAGESTR = """{versionstr}
         -f FILE,--file FILE    : Use this input file instead of todo.lst.
         -h,--help              : Show this help message.
         -i,--important         : Mark key/item as important (bold/red).
+                                 Only show important items when listing.
         -I,--unimportant       : Mark key/item as unimportant.
         -j,--json              : Show list, or a specific key in JSON format.
         -k,--listkeys          : List key names only.
@@ -242,13 +243,20 @@ def build_actions(argdict):
         },
         '--list': {
             'function': do_listkey,
-            'kwargs': {'key': userkey},
+            'kwargs': {
+                'key': userkey,
+                'important_only': userimportant,
+            },
         },
         '--listall': {
             'function': do_listall,
+            'kwargs': {
+                'important_only': userimportant,
+            },
         },
         '--listkeys': {
             'function': do_listkeys,
+            'kwargs': {'important_only': userimportant},
         },
         '--movetokey': {
             'function': do_move_tokey,
@@ -262,7 +270,10 @@ def build_actions(argdict):
         },
         '--preview': {
             'function': do_listall,
-            'kwargs': {'preview': True},
+            'kwargs': {
+                'preview': True,
+                'important_only': userimportant
+            },
         },
         '--remove': {
             'function': do_remove,
@@ -307,6 +318,11 @@ def build_actions(argdict):
             'kwargs': {'key': userkey},
         },
     }
+    # Override do_mark_important with a listing function, this sucks.
+    for flag in ('--list', '--listall', '--listkeys'):
+        if argdict['--important'] and argdict[flag]:
+            actions['--important'] = actions[flag]
+
     return actions
 
 
@@ -499,12 +515,16 @@ def do_json(key=None):
     return 1
 
 
-def do_listall(preview=False):
+def do_listall(preview=False, important_only=False):
     """ List all items in all keys. """
     retall = 0
     names = todolist.keynames()
     for keyname in names:
-        ret = do_listkey(keyname, preview=preview)
+        ret = do_listkey(
+            keyname,
+            preview=preview,
+            important_only=important_only
+        )
         if ret == 1:
             retall = 1
             printstatus('Error listing key:', key=keyname, error=True)
@@ -514,37 +534,52 @@ def do_listall(preview=False):
     return retall
 
 
-def do_listkey(key=None, preview=False):
+def do_listkey(key=None, preview=False, important_only=False):
     """ List all items within a key. """
     todokey = get_key(key or TodoKey.null)
 
     if todokey is None:
         return 1
 
-    if todokey:
-        keystr = todokey.preview_str() if preview else str(todokey)
-        print('    {}'.format(keystr.replace('\n', '\n    ')))
-    else:
+    if not todokey:
         print('    {}'.format(str(todokey)))
         printstatus(
             '        (no items in this key)',
             error=True,
-            nobreak=True)
-    return 0
+            nobreak=True
+        )
+        return 1
+    if important_only and (not todokey.important_items()):
+        return 0
+
+    if preview:
+        keystr = todokey.preview_str(
+            color=True,
+            important_only=important_only
+        )
+    else:
+        keystr = todokey.to_str(
+            color=True,
+            important_only=important_only
+        )
+
+    print('    {}'.format(keystr.replace('\n', '\n    ')))
 
 
-def do_listkeys():
+def do_listkeys(important_only=False):
     """ List key names only. """
     keynames = todolist.keynames()
     # If color is disabled, then use a text marker.
     usemarker = colr_disabled()
 
     if not keynames:
-        print_err('No keys to list.')
+        printstatus('No keys to list.', error=True)
         return 1
     longestkeylen = len(max(keynames, key=len))
     for keyname in keynames:
         key = todolist[keyname]
+        if important_only and (not key.important):
+            continue
         # Wrap the name in a Colr() to ljust without escape codes.
         namefmt = C(
             key.get_label(color=not usemarker, usetextmarker=usemarker)
@@ -1216,7 +1251,7 @@ class TodoItem(object):
         return self.to_str(
             color=color,
             usetextmarker=usetextmarker,
-            max_length=max_itemlen
+            max_length=max_itemlen,
         )
 
     def to_json(self):
@@ -1233,7 +1268,6 @@ class TodoItem(object):
         """
         if not self.text:
             return ''
-
         usestr = self.text
         if usetextmarker and self.important:
             usestr = '{}{}'.format(TodoItem.important_str, usestr)
@@ -1365,6 +1399,10 @@ class TodoKey(UserList):
             return colorimpkey(lbl) if self.important else colorkey(lbl)
         return lbl
 
+    def important_items(self):
+        """ Return a list with only important items from this TodoKey. """
+        return [item for item in self if item.important]
+
     def move_item(self, query, newindex):
         """ Move an item from one position to another.
             The query is just as in find_item(), an index or regex/text.
@@ -1410,7 +1448,7 @@ class TodoKey(UserList):
             or on error, raises TodoList.BadQueryError().
         """
         if (query is None) or (query == ''):
-            raise self.BadQueryError('Empty query!')
+            raise cls.BadQueryError('Empty query!')
 
         try:
             intval = int(query)
@@ -1421,12 +1459,16 @@ class TodoKey(UserList):
                 querypat = re.compile(query, re.IGNORECASE)
             except (re.error, TypeError) as exreg:
                 errmsg = 'Invalid query: {}\n{}'.format(query, exreg)
-                raise self.BadQueryError(errmsg)
+                raise cls.BadQueryError(errmsg)
         return intval, querypat
 
-    def preview_str(self):
+    def preview_str(self, color=True, important_only=False):
         """ A short preview list of this key's items. """
-        return self.to_str(max_items=2, color=True)
+        return self.to_str(
+            max_items=2,
+            color=color,
+            important_only=important_only
+        )
 
     def remove_item(self, query):
         """ Removes an item from this key. The query can be the index,
@@ -1509,7 +1551,9 @@ class TodoKey(UserList):
             }
         }
 
-    def to_str(self, max_items=None, color=False, usetextmarker=False):
+    def to_str(
+            self, max_items=None, color=False,
+            usetextmarker=False, important_only=False):
         """ Return a string representation of this key, optionally cutting
             the list off at `max_items`.
         """
@@ -1517,9 +1561,13 @@ class TodoKey(UserList):
         lines = [
             '{}:'.format(lbl)
         ]
+        linecnt = 0
         for index, item in enumerate(self.data):
-            if max_items and index == max_items:
+            linecnt += 1
+            if max_items and linecnt > max_items:
                 break
+            if important_only and (not item.important):
+                continue
             lines.append('    {}: {}'.format(
                 index,
                 item.to_str(color=color, usetextmarker=usetextmarker)
