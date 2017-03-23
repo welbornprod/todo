@@ -6,7 +6,6 @@
     -Christopher Welborn 07-21-2014
 """
 
-import inspect
 import functools
 import json
 import os
@@ -27,16 +26,31 @@ try:
         __version__ as colr_version,
         auto_disable as colr_auto_disable,
         color,
-        disabled as colr_disabled,
         Colr as C,
+        disabled as colr_disabled,
+        docopt,
     )
-    from colr.colr_docopt import docopt
 except ImportError as ex:
-    print(bad_import_msg(err=ex, name='Colr', package='colr'))
+    print(
+        bad_import_msg(err=ex, name='Colr', package='colr'),
+        file=sys.stderr,
+    )
+    sys.exit(1)
+try:
+    from printdebug import DebugColrPrinter
+except ImportError as ex:
+    print(
+        bad_import_msg(err=ex, name='PrintDebug', package='printdebug'),
+        file=sys.stderr,
+    )
     sys.exit(1)
 
+debugprinter = DebugColrPrinter()
+debugprinter.disable()
+debug = debugprinter.debug
+
 NAME = 'Todo'
-VERSION = '2.5.0'
+VERSION = '2.6.0'
 VERSIONSTR = '{} v. {}'.format(NAME, VERSION)
 SCRIPT = os.path.split(os.path.abspath(sys.argv[0]))[1]
 SCRIPTDIR = os.path.abspath(sys.path[0])
@@ -45,25 +59,25 @@ USAGESTR = """{versionstr}
     Usage:
         {script} -h | -v
         {script} [-a | -b | -d | -r | -R | -s | -t | -u] KEY ITEM
-             [-f filename] [-D]
+             [-f filename | -g] [-D]
         {script} [-a | -b | -d | -r | -R | -s | -t | -u] ITEM
-             [-f filename] [-D]
-        {script} [-c] | [-i] | ([-j] [KEY]) [-f filename] [-D]
-        {script} -a [-i] KEY ITEM           [-f filename] [-D]
-        {script} -a [-i] ITEM               [-f filename] [-D]
-        {script} -e FILE KEY                [-f filename] [-D]
-        {script} -I KEY [ITEM]              [-f filename] [-D]
-        {script} -I (KEY | ITEM)            [-f filename] [-D]
-        {script} -i KEY [ITEM]              [-f filename] [-D]
-        {script} -i (KEY | ITEM)            [-f filename] [-D]
-        {script} -K KEY                     [-f filename] [-D]
-        {script} -l [-i] [KEY]              [-f filename] [-D]
-        {script} (-k | -L | -P) [-i]        [-f filename] [-D]
-        {script} -m KEY ITEM <new_key>      [-f filename] [-D]
-        {script} -m ITEM <new_key>          [-f filename] [-D]
-        {script} -n [KEY] <new_keyname>     [-f filename] [-D]
-        {script} -p KEY ITEM <new_position> [-f filename] [-D]
-        {script} -p ITEM <new_position>     [-f filename] [-D]
+             [-f filename | -g] [-D]
+        {script} [-c] | [-i] | ([-j] [KEY]) [-f filename | -g] [-D]
+        {script} -a [-i] KEY ITEM           [-f filename | -g] [-D]
+        {script} -a [-i] ITEM               [-f filename | -g] [-D]
+        {script} -e FILE KEY                [-f filename | -g] [-D]
+        {script} -I KEY [ITEM]              [-f filename | -g] [-D]
+        {script} -I (KEY | ITEM)            [-f filename | -g] [-D]
+        {script} -i KEY [ITEM]              [-f filename | -g] [-D]
+        {script} -i (KEY | ITEM)            [-f filename | -g] [-D]
+        {script} -K KEY                     [-f filename | -g] [-D]
+        {script} -l [-i] [KEY]              [-f filename | -g] [-D]
+        {script} (-k | -L | -P) [-i]        [-f filename | -g] [-D]
+        {script} -m KEY ITEM <new_key>      [-f filename | -g] [-D]
+        {script} -m ITEM <new_key>          [-f filename | -g] [-D]
+        {script} -n [KEY] <new_keyname>     [-f filename | -g] [-D]
+        {script} -p KEY ITEM <new_position> [-f filename | -g] [-D]
+        {script} -p ITEM <new_position>     [-f filename | -g] [-D]
 
     Options:
         KEY                    : Key or label for the item.
@@ -89,6 +103,8 @@ USAGESTR = """{versionstr}
                                  Gives you a look into what's going on
                                  behind the scenes.
         -f FILE,--file FILE    : Use this input file instead of todo.lst.
+        -g,--global            : Use global todo.lst even when a local file
+                                 exists.
         -h,--help              : Show this help message.
         -i,--important         : Mark key/item as important (bold/red).
                                  Only show important items when listing.
@@ -133,16 +149,18 @@ def main(argd):  # noqa
     """ Main entry point, expects doctopt arg dict as argd """
     global DEBUG, todolist, userkey, useritem
     DEBUG = argd['--debug']
+    debugprinter.enable(DEBUG)
     if DEBUGARGS:
         DEBUG = True
-        printdebug("Arguments:", data=argd)
+        debug('Arguments: ')
+        debug(json.dumps(argd, sort_keys=True, indent=4), align=True)
         return 0
-    printdebug_header()
+    debug_header()
 
     # Use provided file, then local, then the default.
     if argd['--file']:
         todofile = argd['--file']
-    elif os.path.exists(LOCALFILE):
+    elif (not argd['--global']) and os.path.exists(LOCALFILE):
         todofile = LOCALFILE
     else:
         todofile = DEFAULTFILE
@@ -151,7 +169,7 @@ def main(argd):  # noqa
     try:
         todolist = TodoList(filename=todofile)
     except TodoList.NoFileExists:
-        printdebug('No file exists at: {}'.format(todofile))
+        debug('No file exists at: {}'.format(todofile))
     except TodoList.ParseError as exparse:
         printstatus('The todo.lst couldn\'t be loaded!', error=exparse)
         return 1
@@ -193,7 +211,6 @@ def main(argd):  # noqa
         printstatus('Error:', error=ex)
         return 1
 
-    # printdebug(text='Todo Items after this run:', data=todolist)
     return retvalue
 
 # Functions -------------------------------------------------------
@@ -206,7 +223,7 @@ def build_actions(argdict):
     useritem = argdict['ITEM'] or None
     rawkey = argdict['KEY']
     userkey = rawkey or None
-    printdebug('Using key: {!r}'.format(userkey))
+    debug('Using key: {!r}'.format(userkey))
 
     userimportant = argdict['--important']
     actions = {
@@ -319,7 +336,7 @@ def build_actions(argdict):
         },
     }
     # Override do_mark_important with a listing function, this sucks.
-    for flag in ('--list', '--listall', '--listkeys'):
+    for flag in ('--list', '--listall', '--listkeys', '--preview'):
         if argdict['--important'] and argdict[flag]:
             actions['--important'] = actions[flag]
 
@@ -330,22 +347,22 @@ def check_empty_key(key=None, silentsave=False):
     """ Check to see if a key is empty, and offer to remove it if it is. """
     todokey = todolist.get_key(key)
     if todokey is None:
-        printdebug('Invalid empty key check for: {} (is {})'.format(
+        debug('Invalid empty key check for: {} (is {})'.format(
             key,
             todokey))
         return False
 
     if len(todokey) == 0:
-        printdebug('Key is empty: {}'.format(todokey.label))
+        debug('Key is empty: {}'.format(todokey.label))
         warn = ('This key is empty now:', todokey.label)
         msg = 'Would you like to remove the key?'
         if confirm(msg, warn=warn):
-            printdebug('Removing empty key: {}'.format(todokey.label))
+            debug('Removing empty key: {}'.format(todokey.label))
             if do_removekey(todokey, silentsave=silentsave) == 0:
                 return True
             return False
 
-    printdebug('Key was not empty.')
+    debug('Key was not empty.')
     return False
 
 
@@ -375,75 +392,19 @@ def confirm(question, header=None, warn=None, forceanswer=False):
     return (ans[0] == 'y') if ans else False
 
 
-def debug(*args, **kwargs):
-    """ Print a message only if DEBUG is truthy. """
-    if not (DEBUG and args):
-        return None
-
-    # Use stderr by default.
-    if kwargs.get('file', None) is None:
-        kwargs['file'] = sys.stderr
-
-    # Include parent class name when given.
-    parent = kwargs.get('parent', None)
-    with suppress(KeyError):
-        kwargs.pop('parent')
-
-    # Go back more than once when given.
-    backlevel = kwargs.get('back', 1)
-    with suppress(KeyError):
-        kwargs.pop('back')
-
-    frame = inspect.currentframe()
-    # Go back a number of frames (usually 1).
-    while backlevel > 0:
-        if frame is None:
-            raise ValueError('`level` is too large, there is no frame.')
-        frame = frame.f_back
-        backlevel -= 1
-    if frame is None:
-        raise ValueError('`level` is too large, there is no frame.')
-    fname = os.path.split(frame.f_code.co_filename)[-1]
-    lineno = frame.f_lineno
-    if parent:
-        func = '{}.{}'.format(parent.__class__.__name__, frame.f_code.co_name)
-    else:
-        func = frame.f_code.co_name
-
-    # Use the colorized lineinfo for printing.
-    lineinfo = C('{}:{} {}: '.format(
-        C(fname, 'yellow'),
-        C(str(lineno).rjust(5), 'blue'),
-        C().join(C(func, 'magenta'), '()').rjust(25)
-    ))
-
-    # Are we omitting the line info, and just aligning with the end of it?
-    align = kwargs.get('align', False)
-    with suppress(KeyError):
-        kwargs.pop('align')
-
-    # An editable arg list, for patching.
-    pargs = list(C(a, 'green').str() for a in args)
-
-    # Is this a continuation from a previous line?
-    # Getting this for debug(), re-setting for print().
-    kwargs['end'] = kwargs.get('end', '\n')
-    willcontinue = (not kwargs['end'].endswith('\n'))
-    continued = debug.continued.get(kwargs['file'], False)
-    if align or continued:
-        debug.continued[kwargs['file']] = willcontinue
-        if align:
-            pargs[0] = ''.join((' ' * len(lineinfo.stripped()), pargs[0]))
-        print(*pargs, **kwargs)
-        return None
-    debug.continued[kwargs['file']] = willcontinue
-
-    # Patch args to stay compatible with print().
-    pargs[0] = ''.join((str(lineinfo), pargs[0]))
-    print(*pargs, **kwargs)
-# This dict tracks whether line info should be included, based on whether
-# the last line's `end` had a newline in it, per file descriptor.
-debug.continued = {}
+def debug_header():
+    """ Print some debug info about this Todo version, if DEBUG is truthy. """
+    debug('Using:')
+    debug(
+        'colr  : {}'.format(colr_version),
+        align=True
+    )
+    debug(
+        'python: {v.major}.{v.minor}.{v.micro}'.format(
+            v=sys.version_info
+        ),
+        align=True
+    )
 
 
 def do_add(text, key=None, important=False):
@@ -451,7 +412,7 @@ def do_add(text, key=None, important=False):
     if not text:
         printstatus('No item to add!', error=True)
         return 1
-    printdebug('do_add(key={},important={},"{}")'.format(
+    debug('do_add(key={},important={},"{}")'.format(
         key,
         important,
         text))
@@ -598,14 +559,14 @@ def do_mark_important(query, key=None, adding=False, important=True):
         this function and does 'do_add' instead. It is because of the way
         arguments are handled (the way functions are fired off.)
     """
-    printdebug('Marking important={}: {}, key={}'.format(
+    debug('Marking important={}: {}, key={}'.format(
         important,
         query,
         key,
     ))
     todokey = todolist.get_key(key, default=None)
     if todokey is None:
-        printdebug('Looking for item to mark important={}: {}'.format(
+        debug('Looking for item to mark important={}: {}'.format(
             important,
             key,
         ))
@@ -748,7 +709,7 @@ def do_move_tokey(query, newkey, key=None):
             errs += 1
 
         if not check_empty_key(listresult.key, silentsave=True):
-            printdebug('Key still has items: {}'.format(listresult.key.label))
+            debug('Key still has items: {}'.format(listresult.key.label))
 
     return do_save()
 
@@ -794,7 +755,7 @@ def do_remove(query, key=None, confirmation=True):
         )
         # Offer to delete the key if it is empty.
         if not check_empty_key(listresult.key, silentsave=True):
-            printdebug('Key still has items: {}'.format(listresult.key.label))
+            debug('Key still has items: {}'.format(listresult.key.label))
 
     return do_save()
 
@@ -918,7 +879,7 @@ def get_action(argdict):
                         fname,
                         args,
                         kwarg_str(kwargs))
-                printdebug(dbugmsg)
+                debug(dbugmsg)
             # Return the function with the appropriate arguments/keyword-args.
             return functools.partial(func, *args, **kwargs)
     return None
@@ -951,7 +912,7 @@ def get_key(keyname=None):
     """
     # A TodoKey may have been passed to another command like do_listkey..
     if isinstance(keyname, TodoKey):
-        printdebug('Already a key: {}'.format(keyname.label))
+        debug('Already a key: {}'.format(keyname.label))
         return keyname
 
     if keyname is None:
@@ -986,9 +947,9 @@ def merge_json(dictobj, filename):
     try:
         with open(filename, 'r') as fread:
             data = fread.read()
-        printdebug('Using existing data from: {}'.format(filename))
+        debug('Using existing data from: {}'.format(filename))
     except FileNotFoundError:
-        printdebug('Creating a new JSON file: {}'.format(filename))
+        debug('Creating a new JSON file: {}'.format(filename))
         data = '{}'
 
     # Create object from existing JSON, even if it's just an empty dict.
@@ -1034,30 +995,6 @@ def no_nones(iterable):
         This is used for TodoListResult.__bool__, TodoKeyResult.__bool__, etc.
     """
     return all((element is not None) for element in iterable)
-
-
-def printdebug(text=None, data=None, **kwargs):
-    """ Debug printer. Prints simple text, or pretty prints dicts/lists. """
-    if DEBUG:
-        if text:
-            debug(text, back=2, **kwargs)
-        if data:
-            printobj(data)
-
-
-def printdebug_header():
-    """ Print some debug info about this Todo version, if DEBUG is truthy. """
-    printdebug('Using:')
-    printdebug(
-        'colr  : {}'.format(colr_version),
-        align=True
-    )
-    printdebug(
-        'python: {v.major}.{v.minor}.{v.micro}'.format(
-            v=sys.version_info
-        ),
-        align=True
-    )
 
 
 def printheader(todolst=None):
@@ -1317,7 +1254,7 @@ class TodoKey(UserList):
         # These will only print when running ./todo.py itself.
         # Otherwise, todo.DEBUG would have to be set.
         # So, by default nothing is ever printed from these classes.
-        printdebug('TodoKey(label=\'{}\'), important='.format(
+        debug('TodoKey(label=\'{}\'), important='.format(
             self.label,
             self.important
         ))
@@ -1357,7 +1294,7 @@ class TodoKey(UserList):
 
     def add_item(self, item, important=False):
         """ Add an item to this key. """
-        printdebug('TodoKey."{}".add_item(\'{}\')'.format(self.label, item))
+        debug('TodoKey."{}".add_item(\'{}\')'.format(self.label, item))
         if isinstance(item, TodoItem):
             newitem = item
         else:
@@ -1371,7 +1308,7 @@ class TodoKey(UserList):
             Otherwise, return (None, None)
             * Indexes are zero-based.
         """
-        printdebug('Finding item in {}: {!r}'.format(self.label, query))
+        debug('Finding item in {}: {!r}'.format(self.label, query))
         intval, querypat = self.parse_query(query)
         for index, item in enumerate(self.data):
             if (intval is not None) and (intval == index):
@@ -1414,7 +1351,7 @@ class TodoKey(UserList):
         """
         keyresult = self.find_item(query)
         if not keyresult:
-            printdebug('Falsey key result: {}'.format(keyresult))
+            debug('Falsey key result: {}'.format(keyresult))
             return self.TodoKeyMove(None, None, None)
 
         try:
@@ -1480,7 +1417,7 @@ class TodoKey(UserList):
         if keyresult:
             removed = self.data.pop(keyresult.index)
         else:
-            printdebug('Falsey key result: {}'.format(keyresult))
+            debug('Falsey key result: {}'.format(keyresult))
 
         return removed
 
@@ -1506,7 +1443,7 @@ class TodoKey(UserList):
             keyresult = self.find_item(query)
             if keyresult:
                 return [keyresult]
-            printdebug('Falsey key result: {}'.format(keyresult))
+            debug('Falsey key result: {}'.format(keyresult))
             return []
         # Find multiple matches.
         intval, querypat = self.parse_query(query)
@@ -1540,7 +1477,7 @@ class TodoKey(UserList):
     def to_json_obj(self):
         """ Turn this key into a JSON-friendly dict object. """
         # Convert TodoItems() to str for JSON, and add key name.
-        printdebug(
+        debug(
             'Converting key to JSON: {}'.format(
                 self.get_label(color=True, usertextmarker=True)
             )
@@ -1620,7 +1557,7 @@ class TodoList(UserDict):
         'TodoListMove',
         ('key', 'index', 'newindex', 'item')
     )
-    TodoListMove.__bool__ =  no_nones
+    TodoListMove.__bool__ = no_nones
     # Returned from a move_item_tokey operation.
     TodoListMoveToKey = namedtuple(
         'TodoListMoveToKey',
@@ -1653,7 +1590,7 @@ class TodoList(UserDict):
         if not text:
             raise self.AddError('No item to add.')
         key = key if key is not None else TodoKey.null
-        printdebug('TodoList.add_item(\'{}\', key=\'{}\')'.format(text, key))
+        debug('TodoList.add_item(\'{}\', key=\'{}\')'.format(text, key))
         # Find the existing key, or create a new one.
         existing = self.get_key(key, default=TodoKey(label=key))
         # Create the new TodoItem.
@@ -1668,17 +1605,17 @@ class TodoList(UserDict):
         if not filename:
             raise ValueError('No file name is set.')
         if not os.path.exists(filename):
-            printdebug('Cannot backup nonexistant file: {}'.format(filename))
+            debug('Cannot backup nonexistant file: {}'.format(filename))
             return False
 
         backupname = '{}~'.format(filename)
         if os.path.exists(backupname):
-            printdebug('Overwriting backup file: {}'.format(filename))
+            debug('Overwriting backup file: {}'.format(filename))
 
         try:
             shutil.copyfile(filename, backupname)
         except EnvironmentError as ex:
-            printdebug('Failed to copy backupfile: {} -> {} ({})'.format(
+            debug('Failed to copy backupfile: {} -> {} ({})'.format(
                 filename,
                 backupname,
                 ex
@@ -1714,7 +1651,7 @@ class TodoList(UserDict):
             Returns [] if no result is found.
         """
         if key:
-            printdebug('Finding item in key: {}'.format(key))
+            debug('Finding item in key: {}'.format(key))
             todokey = self.get_key(key, None)
             if todokey is None:
                 return []
@@ -1728,10 +1665,10 @@ class TodoList(UserDict):
                         keyresult.item
                     )
                 ]
-            printdebug('Falsey key result: {}'.format(keyresult))
+            debug('Falsey key result: {}'.format(keyresult))
             return []
 
-        printdebug('Finding item in any key.')
+        debug('Finding item in any key.')
         found = []
         for todokey in self.todokeys():
             keyresult = todokey.find_item(query)
@@ -1765,7 +1702,7 @@ class TodoList(UserDict):
 
         key = key if key is not None else TodoKey.null
         key = key.lower()
-        printdebug('TodoList.get_key(\'{}\')'.format(key))
+        debug('TodoList.get_key(\'{}\')'.format(key))
         for todokeyname in self.data:
             todokey = self.data[todokeyname]
             if todokey.label.lower() == key:
@@ -1789,7 +1726,6 @@ class TodoList(UserDict):
 
     def load_data(self, data, append=False):
         """ Load items from a dict. """
-        # printdebug('Loading data:', data=data)
         if not data:
             # No data passed in!
             self.data = {}
@@ -1812,7 +1748,7 @@ class TodoList(UserDict):
         if self.data:
             TodoKey.null = self.keynames()[0]
             msgnullsetting = 'TodoKey.null = \'{}\''.format(TodoKey.null)
-            printdebug('TodoList.load_data(): {}'.format(msgnullsetting))
+            debug('TodoList.load_data(): {}'.format(msgnullsetting))
 
         return self.get_count()
 
@@ -1894,11 +1830,11 @@ class TodoList(UserDict):
             raise self.BadKeyError(
                 'Source key and destination key are the same.'
             )
-        printdebug('TodoList.move...key(\'{}\', \'{}\')'.format(
+        debug('TodoList.move...key(\'{}\', \'{}\')'.format(
             query,
             newkey))
         removed = todokey.remove_item(query)
-        printdebug('TodoList.move_item_tokey: moving {}'.format(removed))
+        debug('TodoList.move_item_tokey: moving {}'.format(removed))
         if removed is None:
             return (None, None, None)
 
@@ -1999,6 +1935,7 @@ class TodoList(UserDict):
     def todokeys(self):
         """ Shortcut to TodoList.data.values() """
         return list(self.data.values())
+
 
 # Start of script ---------------------------------------------------
 if __name__ == '__main__':
