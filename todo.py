@@ -28,7 +28,6 @@ try:
         color,
         Colr as C,
         disabled as colr_disabled,
-        docopt,
     )
 except ImportError as ex:
     print(
@@ -36,6 +35,15 @@ except ImportError as ex:
         file=sys.stderr,
     )
     sys.exit(1)
+try:
+    from colr import docopt
+except ImportError as ex:
+    print(
+        bad_import_msg(err=ex, name='Docopt', package='docopt'),
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
 try:
     from printdebug import DebugColrPrinter
 except ImportError as ex:
@@ -50,7 +58,7 @@ debugprinter.disable()
 debug = debugprinter.debug
 
 NAME = 'Todo'
-VERSION = '2.6.0'
+VERSION = '2.6.1'
 VERSIONSTR = '{} v. {}'.format(NAME, VERSION)
 SCRIPT = os.path.split(os.path.abspath(sys.argv[0]))[1]
 SCRIPTDIR = os.path.abspath(sys.path[0])
